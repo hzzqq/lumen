@@ -6,7 +6,7 @@
   "scripts": {
     "serve": "python -m http.server 8080",
     "start": "python -m http.server 8080",
-    "test": "node --check main.js"
+    "test": "node _bvh_sah_test.js && node _denoise_test.js && node _model_test.js"
   },
   "keywords": ["webgl2", "path-tracing", "raytracer", "glsl", "monte-carlo", "bvh"],
   "author": "hzzqq",

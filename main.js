@@ -394,9 +394,12 @@ precision highp float;
 out vec4 outColor;
 in vec2 vUv;
 uniform sampler2D uAccum;
-uniform int uSamples;
+uniform int   uSamples;
 uniform float uExposure;
-uniform int uTone;
+uniform int   uTone;
+uniform int   uDenoise;    // 0 关闭 1 开启 A-trous 边缘感知降噪
+uniform int   uDenIters;   // 小波迭代次数 (1..5)
+uniform vec2  uTexSize;    // 累积缓冲分辨率(像素)
 vec3 aces(vec3 x){
   float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
   return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
@@ -407,8 +410,36 @@ vec3 tonemap(vec3 x, int m){
   if(m==2) return clamp(x, 0.0, 1.0);   // 线性(仅裁剪)
   return aces(x);                        // 0 = ACES
 }
+// 边缘感知 A-trous 小波降噪：在累积缓冲(已取平均)上做多尺度卷积，
+// 以颜色/亮度差作为边缘停止权重（无 G-buffer 时退化为亮度引导，保边去噪）。
+vec3 denoiseAtrus(vec3 center, vec2 baseUv, int iters){
+  vec3 c = center;
+  for(int it=0; it<5; it++){
+    if(it >= iters) break;
+    int step = 1 << it;                       // 小波步长 1,2,4,8,16
+    vec3 acc = vec3(0.0);
+    float wSum = 0.0;
+    for(int x=-1; x<=1; x++){
+      for(int y=-1; y<=1; y++){
+        vec2 off = vec2(float(x), float(y)) * float(step);
+        vec2 uv = baseUv + off / uTexSize;
+        vec3 cs = texture(uAccum, uv).rgb / float(max(uSamples,1));
+        // 固定 3x3 小波核权重（单位步长）
+        float wk = (x==0 && y==0) ? 4.0 : ((x!=0 && y!=0) ? 1.0 : 2.0);
+        // 边缘停止：与中心亮度差越大权重越小 → 保边
+        float cd = dot(abs(cs - c), vec3(0.299,0.587,0.114));
+        float ws = wk * exp(-cd * 16.0);
+        acc += cs * ws;
+        wSum += ws;
+      }
+    }
+    if(wSum > 1e-4) c = acc / wSum;
+  }
+  return c;
+}
 void main(){
   vec3 c = texture(uAccum, vUv).rgb / float(max(uSamples,1));
+  if(uDenoise == 1){ c = denoiseAtrus(c, vUv, uDenIters); }
   c = tonemap(c * uExposure, uTone);
   c = pow(c, vec3(1.0/2.2));
   outColor = vec4(c,1.0);
@@ -515,40 +546,79 @@ function faceNormal(a,b,c){
   return [n[0]/l,n[1]/l,n[2]/l];
 }
 const LEAF = 8;
+const SAH_BINS = 32;
 function buildBVH(tris){
   const N = tris.length;
   const idx = new Array(N); for(let i=0;i<N;i++) idx[i]=i;
-  const nodes = [];
-  const aabb = t=>{
-    const mn=[Math.min(t.v0[0],t.v1[0],t.v2[0]),Math.min(t.v0[1],t.v1[1],t.v2[1]),Math.min(t.v0[2],t.v1[2],t.v2[2])];
-    const mx=[Math.max(t.v0[0],t.v1[0],t.v2[0]),Math.max(t.v0[1],t.v1[1],t.v2[1]),Math.max(t.v0[2],t.v1[2],t.v2[2])];
-    return {mn,mx};
-  };
-  const cen = t=>[ (t.v0[0]+t.v1[0]+t.v2[0])/3, (t.v0[1]+t.v1[1]+t.v2[1])/3, (t.v0[2]+t.v1[2]+t.v2[2])/3 ];
-  function build(start, end){
-    const ni = nodes.length;
-    nodes.push({mn:[1e30,1e30,1e30],mx:[-1e30,-1e30,-1e30],left:-1,start:-1,count:-1});
-    let c0=[1e30,1e30,1e30], c1=[-1e30,-1e30,-1e30];
-    for(let i=start;i<end;i++){
-      const k=idx[i], a=aabb(tris[k]);
-      for(let d=0;d<3;d++){ if(a.mn[d]<nodes[ni].mn[d]) nodes[ni].mn[d]=a.mn[d]; if(a.mx[d]>nodes[ni].mx[d]) nodes[ni].mx[d]=a.mx[d]; }
-      const c=cen(tris[k]);
-      for(let d=0;d<3;d++){ if(c[d]<c0[d]) c0[d]=c[d]; if(c[d]>c1[d]) c1[d]=c[d]; }
+  // 预计算每个三角形的包围盒与质心（按原始下标）
+  const tAABB = new Array(N), tCen = new Array(N);
+  for(let i=0;i<N;i++){
+    const t=tris[i];
+    tAABB[i] = {
+      mn:[Math.min(t.v0[0],t.v1[0],t.v2[0]),Math.min(t.v0[1],t.v1[1],t.v2[1]),Math.min(t.v0[2],t.v1[2],t.v2[2])],
+      mx:[Math.max(t.v0[0],t.v1[0],t.v2[0]),Math.max(t.v0[1],t.v1[1],t.v2[1]),Math.max(t.v0[2],t.v1[2],t.v2[2])]
+    };
+    tCen[i] = [ (t.v0[0]+t.v1[0]+t.v2[0])/3, (t.v0[1]+t.v1[1]+t.v2[1])/3, (t.v0[2]+t.v1[2]+t.v2[2])/3 ];
+  }
+  const INF = 1e30;
+  const SA = (mn,mx)=>{ const dx=Math.max(0,mx[0]-mn[0]),dy=Math.max(0,mx[1]-mn[1]),dz=Math.max(0,mx[2]-mn[2]); return 2*(dx*dy+dy*dz+dz*dx); };
+  function bounds(s,e){
+    const mn=[INF,INF,INF], mx=[-INF,-INF,-INF], c0=[INF,INF,INF], c1=[-INF,-INF,-INF];
+    for(let i=s;i<e;i++){ const k=idx[i], b=tAABB[k], c=tCen[k];
+      for(let d=0;d<3;d++){ if(b.mn[d]<mn[d])mn[d]=b.mn[d]; if(b.mx[d]>mx[d])mx[d]=b.mx[d]; if(c[d]<c0[d])c0[d]=c[d]; if(c[d]>c1[d])c1[d]=c[d]; } }
+    return {mn,mx,c0,c1};
+  }
+  function partition(s,e,axis,pos){
+    let i=s, j=e-1;
+    while(i<=j){ const c=tCen[idx[i]][axis];
+      if(c<=pos){ i++; } else { const tmp=idx[i]; idx[i]=idx[j]; idx[j]=tmp; j--; } }
+    return i;
+  }
+  const nodes=[];
+  function build(s,e){
+    const ni=nodes.length;
+    const {mn,mx,c0,c1}=bounds(s,e);
+    nodes.push({mn,mx,left:-1,start:-1,count:-1});
+    const count=e-s;
+    if(count<=LEAF){ nodes[ni].start=s; nodes[ni].count=count; return ni; }
+    // —— SAH 分箱：对每条轴找最小代价分割平面 ——
+    let bestCost=INF, bestAxis=-1, bestPos=0;
+    const BB=SAH_BINS;
+    for(let axis=0;axis<3;axis++){
+      const lo=c0[axis], hi=c1[axis], span=hi-lo;
+      if(span<=1e-9) continue;                       // 该轴质心无跨度，跳过
+      const binCount=new Array(BB).fill(0);
+      const binMin=[], binMax=[];
+      for(let b=0;b<BB;b++){ binMin.push([INF,INF,INF]); binMax.push([-INF,-INF,-INF]); }
+      for(let i=s;i<e;i++){ const k=idx[i];
+        const b=Math.min(BB-1, Math.max(0, Math.floor((tCen[k][axis]-lo)/span*BB)));
+        binCount[b]++; const bb=tAABB[k];
+        for(let d=0;d<3;d++){ if(bb.mn[d]<binMin[b][d])binMin[b][d]=bb.mn[d]; if(bb.mx[d]>binMax[b][d])binMax[b][d]=bb.mx[d]; } }
+      // 前向累积左侧包围盒、后向累积右侧包围盒
+      const Lc=[], Lmin=[], Lmax=[];
+      let lc=0; const lmn=[INF,INF,INF], lmx=[-INF,-INF,-INF];
+      for(let b=0;b<BB;b++){ lc+=binCount[b];
+        if(binCount[b]>0){ for(let d=0;d<3;d++){ if(binMin[b][d]<lmn[d])lmn[d]=binMin[b][d]; if(binMax[b][d]>lmx[d])lmx[d]=binMax[b][d]; } }
+        Lc.push(lc); Lmin.push(lmn.slice()); Lmax.push(lmx.slice()); }
+      const Rc=new Array(BB), Rmin=[], Rmax=[];
+      let rc=0; const rmn=[INF,INF,INF], rmx=[-INF,-INF,-INF];
+      for(let b=BB-1;b>=0;b--){ rc+=binCount[b];
+        if(binCount[b]>0){ for(let d=0;d<3;d++){ if(binMin[b][d]<rmn[d])rmn[d]=binMin[b][d]; if(binMax[b][d]>rmx[d])rmx[d]=binMax[b][d]; } }
+        Rc[b]=rc; Rmin[b]=rmn.slice(); Rmax[b]=rmx.slice(); }
+      for(let b=0;b<BB-1;b++){
+        const lc2=Lc[b], rc2=Rc[b+1];
+        if(lc2===0||rc2===0) continue;
+        const cost = lc2*SA(Lmin[b],Lmax[b]) + rc2*SA(Rmin[b+1],Rmax[b+1]);
+        if(cost<bestCost){ bestCost=cost; bestAxis=axis; bestPos=lo+(b+1)/BB*span; }
+      }
     }
-    const count = end-start;
-    if(count<=LEAF){ nodes[ni].start=start; nodes[ni].count=count; return ni; }
-    let axis=0, ext=c1[0]-c0[0];
-    if(c1[1]-c0[1]>ext){axis=1;ext=c1[1]-c0[1];}
-    if(c1[2]-c0[2]>ext){axis=2;ext=c1[2]-c0[2];}
-    const mid=(c0[axis]+c1[axis])*0.5;
-    let i=start, j=end-1;
-    while(i<=j){
-      const ck=cen(tris[idx[i]])[axis];
-      if(ck<mid){ i++; } else { const tmp=idx[i]; idx[i]=idx[j]; idx[j]=tmp; j--; }
-    }
-    if(i===start || i===end) i=(start+end)>>1;
-    const left=build(start,i); build(i,end);
-    nodes[ni].left=left;
+    // 退化保护：SAH 无可行分割时回退质心范围最大轴的中点
+    if(bestAxis<0){ let axis=0,ext=c1[0]-c0[0];
+      if(c1[1]-c0[1]>ext){axis=1;ext=c1[1]-c0[1];} if(c1[2]-c0[2]>ext){axis=2;ext=c1[2]-c0[2];}
+      bestAxis=axis; bestPos=(c0[axis]+c1[axis])*0.5; }
+    let split=partition(s,e,bestAxis,bestPos);
+    if(split<=s || split>=e) split=(s+e)>>1;          // 防止出现空侧
+    const leftChild=build(s,split); nodes[ni].left=leftChild; build(split,e);  // 右孩子 = left+1（GLSL 约定）
     return ni;
   }
   build(0,N);
@@ -598,12 +668,84 @@ function packAndUpload(tris){
   return { triTex, bvhTex, triCount: tris.length };
 }
 
-// 生成网格 + BVH 并上传
-const torus = makeTorus(2.2, 0.9, 56, 28);   // 约 3136 个三角形
-const bvh = buildBVH(torus);
-const meshTex = packAndUpload(bvh.ordered);
+// ---------- 模型导入：OBJ / glTF（最简解析 → 三角形数组 → 重建 BVH）----------
+// OBJ：v/vn/f，面用三角扇化；法线缺失时用面法线；材质统一近似为漫反射。
+function parseOBJ(text){
+  const verts = [], norms = [], tris = [];
+  const lines = text.split(/\r?\n/);
+  for(const line of lines){
+    const t = line.trim();
+    if(t === '' || t[0] === '#') continue;
+    const p = t.split(/\s+/);
+    if(p[0] === 'v')      verts.push([+p[1], +p[2], +p[3]]);
+    else if(p[0] === 'vn') norms.push([+p[1], +p[2], +p[3]]);
+    else if(p[0] === 'f'){
+      const idx = [];
+      for(let i=1;i<p.length;i++){ const f = p[i].split('/'); idx.push(parseInt(f[0], 10) - 1); }
+      if(idx.length < 3) continue;
+      const push = (a,b,c)=> tris.push({ v0:a, v1:b, v2:c, n: faceNormal(a,b,c), albedo:[0.82,0.6,0.38], mat:0 });
+      push(verts[idx[0]], verts[idx[1]], verts[idx[2]]);            // 三角扇：首顶点 + 每对后续顶点
+      for(let i=3;i<idx.length;i++) push(verts[idx[0]], verts[idx[i-1]], verts[idx[i]]);
+    }
+  }
+  return tris;
+}
+// glTF 2.0（最简）：单 buffer（data: base64 内联）、POSITION 存取器、可选索引；
+// 仅支持 FLOAT(VEC3) 顶点与 UNSIGNED_INT/SHORT/BYTE 索引；材质近似为漫反射。
+function parseGLTF(json){
+  const buffers = (json.buffers || []).map(b=>{
+    if(typeof b.uri === 'string' && b.uri.startsWith('data:')){
+      const b64 = b.uri.split(',')[1];
+      return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    }
+    return null;
+  });
+  const f32 = (acc)=>{
+    const v = json.bufferViews[acc.bufferView];
+    return new Float32Array(buffers[v.buffer].buffer, (v.byteOffset||0) + (acc.byteOffset||0), acc.count*3);
+  };
+  const indicesOf = (acc)=>{
+    const v = json.bufferViews[acc.bufferView];
+    const base = (v.byteOffset||0) + (acc.byteOffset||0);
+    const buf = buffers[v.buffer];
+    if(acc.componentType === 5125) return new Uint32Array(buf.buffer, base, acc.count);
+    if(acc.componentType === 5123) return new Uint16Array(buf.buffer, base, acc.count);
+    if(acc.componentType === 5121) return new Uint8Array(buf.buffer, base, acc.count);
+    return new Uint32Array(buf.buffer, base, acc.count);
+  };
+  const tris = [];
+  for(const mesh of (json.meshes || [])){
+    for(const prim of (mesh.primitives || [])){
+      const pos = f32(json.accessors[prim.attributes.POSITION]);
+      const v = i => [pos[i*3], pos[i*3+1], pos[i*3+2]];
+      if(prim.indices != null){
+        const id = indicesOf(json.accessors[prim.indices]);
+        for(let k=0;k<id.length;k+=3){
+          const a=v(id[k]), b=v(id[k+1]), c=v(id[k+2]);
+          tris.push({ v0:a, v1:b, v2:c, n: faceNormal(a,b,c), albedo:[0.82,0.6,0.38], mat:0 });
+        }
+      } else {
+        for(let k=0;k<pos.length/3;k+=3){
+          const a=v(k), b=v(k+1), c=v(k+2);
+          tris.push({ v0:a, v1:b, v2:c, n: faceNormal(a,b,c), albedo:[0.82,0.6,0.38], mat:0 });
+        }
+      }
+    }
+  }
+  return tris;
+}
+
+// 生成网格 + BVH 并上传（可重复调用以替换当前模型）
+let bvh = null, meshTex = null;
 const HAS_MESH = 1;
-console.log('[Lumen] 网格三角形数 =', meshTex.triCount, ' BVH 节点数 =', bvh.nodes.length);
+function loadModel(tris){
+  bvh = buildBVH(tris);
+  if(meshTex){ gl.deleteTexture(meshTex.triTex); gl.deleteTexture(meshTex.bvhTex); }
+  meshTex = packAndUpload(bvh.ordered);
+  console.log('[Lumen] 模型三角形数 =', meshTex.triCount, ' BVH 节点数 =', bvh.nodes.length);
+}
+const torus = makeTorus(2.2, 0.9, 56, 28);   // 约 3136 个三角形
+loadModel(torus);
 
 // ---------- 相机 (轨道) ----------
 let theta = 0.6, phi = 1.15, radius = 9.0, target = [0,0,0];
@@ -636,7 +778,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3;
 let avgBuf=null;
 const $ = id=>document.getElementById(id);
 $('scene').onchange = e=>{
@@ -664,6 +806,26 @@ $('tone').onchange = e=>{ toneMode = +e.target.value; };
 $('autoexp').onchange = e=>{ autoExp = e.target.checked; };
 $('fog').oninput = e=>{ fogDensity = +e.target.value; $('fogVal').textContent = fogDensity.toFixed(2); clearAccum(); };
 $('rr').onchange = e=>{ rrOn = e.target.checked; clearAccum(); };
+$('denoise').onchange = e=>{ denoiseOn = e.target.checked; };
+$('denIters').oninput = e=>{ denIters=+e.target.value; $('denItersVal').textContent=denIters; };
+// 导入外部模型：OBJ / glTF（最简解析），替换当前网格并重建 BVH
+$('modelFile').addEventListener('change', e=>{
+  const file = e.target.files && e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const text = String(reader.result);
+      const name = file.name.toLowerCase();
+      const tris = name.endsWith('.gltf') ? parseGLTF(JSON.parse(text))
+                  : name.endsWith('.obj')  ? parseOBJ(text)
+                  : null;
+      if(!tris || tris.length === 0){ console.warn('[Lumen] 模型为空或格式不支持'); return; }
+      loadModel(tris);
+      clearAccum();
+    }catch(err){ console.error('[Lumen] 模型解析失败', err); }
+  };
+  reader.readAsText(file);
+});
 // 自动曝光：周期性回读累积缓冲中心区块的平均亮度，将曝光归一到目标亮度
 function readAvgLum(){
   const W = 64, H = 64;
@@ -739,6 +901,9 @@ function loop(){
   gl.uniform1i(u(showProg,'uSamples'), frame+1);
   gl.uniform1f(u(showProg,'uExposure'), exposure);
   gl.uniform1i(u(showProg,'uTone'), toneMode);
+  gl.uniform1i(u(showProg,'uDenoise'), denoiseOn ? 1 : 0);
+  gl.uniform1i(u(showProg,'uDenIters'), denIters);
+  gl.uniform2f(u(showProg,'uTexSize'), RW, RH);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   frame++;

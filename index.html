@@ -105,6 +105,22 @@
     </div>
 
     <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="denoise" /> 边缘感知降噪 (A-trous 小波)
+      </label>
+    </div>
+
+    <div class="row">
+      <label>降噪迭代次数 <span class="val" id="denItersVal">3</span></label>
+      <input type="range" id="denIters" min="1" max="5" step="1" value="3" />
+    </div>
+
+    <div class="row">
+      <label>导入模型（OBJ / glTF）</label>
+      <input type="file" id="modelFile" accept=".obj,.gltf" />
+    </div>
+
+    <div class="row">
       <label>对焦距离 (景深) <span class="val" id="focusVal">9.0</span></label>
       <input type="range" id="focus" min="3" max="30" step="0.5" value="9" />
     </div>
