@@ -1,0 +1,13 @@
+{
+  "name": "lumen-raytracer",
+  "version": "1.0.0",
+  "description": "Lumen — 零依赖 WebGL2 实时路径追踪器 (Monte Carlo Path Tracer)",
+  "main": "index.html",
+  "scripts": {
+    "serve": "python -m http.server 8080",
+    "start": "python -m http.server 8080"
+  },
+  "keywords": ["webgl2", "path-tracing", "raytracer", "glsl", "monte-carlo", "bvh"],
+  "author": "hzzqq",
+  "license": "MIT"
+}

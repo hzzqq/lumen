@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lumen · WebGL2 实时路径追踪</title>
+<style>
+  :root { --bg:#0a0c10; --panel:#12161d; --line:#1f2730; --txt:#cdd6e0; --accent:#4fd1c5; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--txt);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow:hidden; }
+  #app { display:flex; height:100%; }
+  #stage { position:relative; flex:1; }
+  canvas { width:100%; height:100%; display:block; cursor:grab; }
+  canvas:active { cursor:grabbing; }
+  #hud { position:absolute; left:14px; top:12px; font-size:12px; line-height:1.6;
+    background:rgba(10,12,16,.55); padding:8px 12px; border:1px solid var(--line);
+    border-radius:8px; backdrop-filter:blur(6px); pointer-events:none; }
+  #hud b { color:var(--accent); }
+  #panel { width:280px; background:var(--panel); border-left:1px solid var(--line);
+    padding:18px 16px; overflow-y:auto; }
+  #panel h1 { font-size:15px; margin:0 0 2px; letter-spacing:.5px; }
+  #panel .sub { font-size:11px; color:#6b7888; margin-bottom:16px; }
+  .row { margin:14px 0; }
+  .row label { display:block; font-size:12px; color:#9fb0c0; margin-bottom:6px; }
+  select, button, input[type=range] { width:100%; }
+  select { background:#0c0f14; color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:7px 8px; font:inherit; }
+  button { background:#1a222c; color:var(--txt); border:1px solid var(--line);
+    border-radius:6px; padding:9px; font:inherit; cursor:pointer; transition:.15s; }
+  button:hover { border-color:var(--accent); color:var(--accent); }
+  button.primary { background:var(--accent); color:#06201d; border-color:var(--accent); font-weight:700; }
+  .val { float:right; color:var(--accent); }
+  .hint { font-size:11px; color:#6b7888; line-height:1.6; margin-top:18px;
+    border-top:1px solid var(--line); padding-top:12px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="gl"></canvas>
+    <div id="hud">SPP <b id="spp">0</b> · <b id="fps">0</b> fps<br>拖拽旋转 · 滚轮缩放</div>
+  </div>
+  <div id="panel">
+    <h1>Lumen</h1>
+    <div class="sub">WebGL2 Progressive Path Tracer</div>
+
+    <div class="row">
+      <label>场景 SCENE</label>
+      <select id="scene">
+        <option value="0">经典展厅 (反射/折射)</option>
+        <option value="1">彩色球阵</option>
+        <option value="2">极简夜灯</option>
+        <option value="3">BVH 网格 + 环境贴图</option>
+        <option value="4">Cornell Box (封闭房间 + 面积光)</option>
+        <option value="5">彩球墙 (漫反射阵列 + 面光源)</option>
+        <option value="6">玻璃/金属厅 (反射+折射)</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label>最大反弹次数 <span class="val" id="bouncesVal">6</span></label>
+      <input type="range" id="bounces" min="1" max="10" value="6" />
+    </div>
+
+    <div class="row">
+      <label>渲染分辨率 <span class="val" id="resVal">1.0x</span></label>
+      <input type="range" id="res" min="40" max="100" value="100" />
+    </div>
+
+    <div class="row">
+      <label>环境光强度 <span class="val" id="envVal">1.0</span></label>
+      <input type="range" id="env" min="0" max="3" step="0.1" value="1" />
+    </div>
+
+    <div class="row">
+      <label>曝光 <span class="val" id="expVal">1.0</span></label>
+      <input type="range" id="exp" min="0.2" max="3" step="0.1" value="1" />
+    </div>
+
+    <div class="row">
+      <label>色调映射 TONE MAP</label>
+      <select id="tone">
+        <option value="0">ACES</option>
+        <option value="1">Reinhard</option>
+        <option value="2">线性 (仅裁剪)</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="autoexp" /> 自动曝光（读取画面亮度归一化）
+      </label>
+    </div>
+
+    <div class="row">
+      <label>体积雾密度 <span class="val" id="fogVal">0.00</span></label>
+      <input type="range" id="fog" min="0" max="0.15" step="0.005" value="0" />
+    </div>
+
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="rr" /> 俄罗斯轮盘（提前终止低贡献路径，提效）
+      </label>
+    </div>
+
+    <div class="row">
+      <label>对焦距离 (景深) <span class="val" id="focusVal">9.0</span></label>
+      <input type="range" id="focus" min="3" max="30" step="0.5" value="9" />
+    </div>
+
+    <div class="row">
+      <label>光圈 (0=关) <span class="val" id="apVal">0.00</span></label>
+      <input type="range" id="ap" min="0" max="200" step="1" value="0" />
+    </div>
+
+    <div class="row">
+      <label>累积样本上限(自动收敛) <span class="val" id="maxsppVal">2000</span></label>
+      <input type="range" id="maxspp" min="100" max="6000" step="100" value="2000" />
+    </div>
+
+    <div class="row">
+      <button class="primary" id="reset">重新累积 (Reset)</button>
+    </div>
+    <div class="row">
+      <button id="pause">暂停 / 继续</button>
+    </div>
+    <div class="row tools" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <button id="rotate">自动旋转</button>
+      <button id="save">保存 PNG</button>
+    </div>
+
+    <div class="hint">
+      纯手写 GLSL 路径追踪：蒙特卡洛软阴影、菲涅尔反射/折射、
+      cosine-weighted 漫反射。场景 3 加载约 3000 三角面的环面，
+      由 JS 建 <b>BVH</b> 并打包进浮点纹理，在 GLSL 中遍历加速；
+      环境光照来自程序化 HDRI 风格天空（含太阳），金属/玻璃球会反射出太阳。
+      每帧追加一个样本，画面随累积逐渐收敛变干净。
+      <b>景深</b>：调大“光圈”并设定“对焦距离”，可让焦平面清晰、前后景虚化（薄透镜近似）。
+      <b>场景 4 Cornell Box</b>：封闭房间（红/绿墙、白地顶）、天花板面积光、两个盒子，
+      是路径追踪面积光照明的经典演示。
+    </div>
+  </div>
+</div>
+<script type="module" src="./main.js"></script>
+</body>
+</html>
