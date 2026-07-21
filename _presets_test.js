@@ -32,12 +32,15 @@ for(const p of PRESETS){
 // ---- presetToParams 归一化（类型守卫）----
 {
   const s = presetToParams(PRESETS[1]); // 电影感夜景
-  ok('presetToParams 返回 22 字段', Object.keys(s).length === 22);
+  ok('presetToParams 返回 25 字段', Object.keys(s).length === 25);
   ok('toneMode 取整为 3', s.toneMode === 3);
   ok('target 归一为数字数组', Array.isArray(s.target) && s.target.every(Number.isFinite));
   ok('bloomOn 布尔化 true', s.bloomOn === true);
   ok('neeOn 布尔化 true', s.neeOn === true);
   ok('exposure 保留 0.7', s.exposure === 0.7);
+  ok('vignetteOn 默认 false(预设未声明)', s.vignetteOn === false);
+  ok('vigStr 默认 0.5(预设未声明)', s.vigStr === 0.5);
+  ok('gamma 默认 2.2(预设未声明)', s.gamma === 2.2);
 }
 // 畸形输入应有默认值且不抛错
 {

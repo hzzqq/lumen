@@ -442,6 +442,9 @@ uniform vec2  uTexSize;    // 累积缓冲分辨率(像素)
 uniform int   uBloom;      // 0 关闭 1 开启 泛光后处理
 uniform float uBloomStr;   // 泛光强度(加性叠加系数)
 uniform float uBloomThr;   // 亮度阈值(超出部分才泛光, soft-knee)
+uniform int   uVignette;   // 0 关闭 1 开启 暗角后处理
+uniform float uVigStr;     // 暗角强度(0=无, 1=边角全黑)
+uniform float uGamma;      // 显示 gamma 校正（2.2≈标准 sRGB 观感，1=线性不变，<1 压暗，>1 提亮暗部）
 vec3 aces(vec3 x){
   float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
   return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
@@ -510,12 +513,19 @@ vec3 bloom(vec2 baseUv, float thr){
   }
   return acc / max(wSum, 1e-4);
 }
+// 暗角：边缘按到中心距离平方压暗；中心=1，边角=1-str（str∈[0,1]）
+float vignette(vec2 uv, float str){
+  vec2 d = (uv - 0.5) * 2.0;          // 映射到 [-1,1]
+  float r2 = dot(d, d);                    // 0 中心 → 2 边角
+  return clamp(1.0 - str * (r2 * 0.5), 0.0, 1.0);
+}
 void main(){
   vec3 c = texture(uAccum, vUv).rgb / float(max(uSamples,1));
   if(uDenoise == 1){ c = denoiseAtrus(c, vUv, uDenIters); }
   if(uBloom == 1){ c += bloom(vUv, uBloomThr) * uBloomStr; }   // 加性叠加泛光光晕
   c = tonemap(c * uExposure, uTone);
-  c = pow(c, vec3(1.0/2.2));
+  c = pow(c, vec3(1.0 / uGamma));                       // 可调 gamma 显示校正
+  if(uVignette == 1){ c *= vignette(vUv, uVigStr); }   // 暗角：边缘压暗
   outColor = vec4(c,1.0);
 }`;
 
@@ -852,7 +862,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, gamma=2.2;
 // ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
 // 纯函数：不依赖 THREE，便于 Node 测试与复用。
 function serializeScene(s){
@@ -864,7 +874,7 @@ function serializeScene(s){
     focusDist: s.focusDist, aperture: s.aperture, maxSamples: s.maxSamples,
     toneMode: s.toneMode, autoExp: s.autoExp, fogDensity: s.fogDensity, rrOn: s.rrOn,
     denoiseOn: s.denoiseOn, denIters: s.denIters, neeOn: s.neeOn, envInt: s.envInt,
-    bloomOn: s.bloomOn, bloomStr: s.bloomStr, bloomThr: s.bloomThr
+    bloomOn: s.bloomOn, bloomStr: s.bloomStr, bloomThr: s.bloomThr, vignetteOn: s.vignetteOn, vigStr: s.vigStr
   };
 }
 function deserializeScene(d){
@@ -878,7 +888,9 @@ function deserializeScene(d){
     focusDist: num('focusDist', 9), aperture: num('aperture', 0), maxSamples: num('maxSamples', 2000),
     toneMode: num('toneMode', 0), autoExp: bool('autoExp', false), fogDensity: num('fogDensity', 0), rrOn: bool('rrOn', false),
     denoiseOn: bool('denoiseOn', false), denIters: num('denIters', 3), neeOn: bool('neeOn', true), envInt: num('envInt', 1),
-    bloomOn: bool('bloomOn', false), bloomStr: num('bloomStr', 0.6), bloomThr: num('bloomThr', 1.0)
+    bloomOn: bool('bloomOn', false), bloomStr: num('bloomStr', 0.6), bloomThr: num('bloomThr', 1.0),
+    vignetteOn: bool('vignetteOn', false), vigStr: num('vigStr', 0.5),
+    gamma: num('gamma', 2.2)
   };
 }
 let avgBuf=null;
@@ -902,7 +914,9 @@ function presetToParams(p){
     exposure: num(p.exposure, 1), focusDist: num(p.focusDist, 9), aperture: num(p.aperture, 0),
     maxSamples: num(p.maxSamples, 2000)|0, toneMode: num(p.toneMode, 0)|0, autoExp: bool(p.autoExp),
     fogDensity: num(p.fogDensity, 0), rrOn: bool(p.rrOn), denoiseOn: bool(p.denoiseOn), denIters: num(p.denIters, 3)|0,
-    neeOn: bool(p.neeOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1)
+    neeOn: bool(p.neeOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1),
+    vignetteOn: bool(p.vignetteOn), vigStr: num(p.vigStr, 0.5),
+    gamma: num(p.gamma, 2.2)
   };
 }
 function applyPreset(idx){
@@ -912,6 +926,7 @@ function applyPreset(idx){
   maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
   maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
   denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
+  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma;
   syncSceneUI(); clearAccum();
 }
 $('scene').onchange = e=>{
@@ -953,6 +968,9 @@ function syncSceneUI(){
   if($('denIters')) $('denIters').value = denIters;
   if($('bloomStr')) $('bloomStr').value = Math.round(bloomStr * 100);
   if($('bloomThr')) $('bloomThr').value = Math.round(bloomThr * 100);
+  if($('vignette')) $('vignette').checked = vignetteOn;
+  if($('vigStr')) $('vigStr').value = Math.round(vigStr * 100);
+  if($('gamma')) $('gamma').value = Math.round(gamma * 100);
   if($('ap')) $('ap').value = Math.round(aperture * 100);
   if($('maxspp')) $('maxspp').value = maxSamples;
   if($('exp') && $('expVal')){ $('exp').value = exposure; $('expVal').textContent = exposure.toFixed(1); }
@@ -960,7 +978,7 @@ function syncSceneUI(){
 }
 $('exportScene').onclick = ()=>{
   const s = serializeScene({ sceneId, theta, phi, radius, target, maxBounces, resScale, exposure,
-    focusDist, aperture, maxSamples, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr });
+    focusDist, aperture, maxSamples, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, gamma });
   downloadBlob('lumen_scene.json', new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' }));
 };
 $('importScene').onclick = ()=> $('sceneFile').click();
@@ -974,6 +992,7 @@ $('sceneFile').onchange = e=>{
       maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
       maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
       denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
+      vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma;
       syncSceneUI(); clearAccum();
     }catch(err){ /* 解析失败静默忽略 */ }
   };
@@ -990,6 +1009,9 @@ $('denIters').oninput = e=>{ denIters=+e.target.value; $('denItersVal').textCont
 $('bloom').onchange = e=>{ bloomOn = e.target.checked; };   // 后处理, 无需清累积
 $('bloomStr').oninput = e=>{ bloomStr=+e.target.value/100; $('bloomStrVal').textContent=bloomStr.toFixed(2); };
 $('bloomThr').oninput = e=>{ bloomThr=+e.target.value/100; $('bloomThrVal').textContent=bloomThr.toFixed(2); };
+$('vignette').onchange = e=>{ vignetteOn = e.target.checked; };   // 后处理, 无需清累积
+$('vigStr').oninput = e=>{ vigStr=+e.target.value/100; $('vigStrVal').textContent=vigStr.toFixed(2); };
+$('gamma').oninput = e=>{ gamma=+e.target.value/100; $('gammaVal').textContent=gamma.toFixed(2); };
 // 导入外部模型：OBJ / glTF（最简解析），替换当前网格并重建 BVH
 $('modelFile').addEventListener('change', e=>{
   const file = e.target.files && e.target.files[0]; if(!file) return;
@@ -1090,6 +1112,9 @@ function loop(){
   gl.uniform1i(u(showProg,'uBloom'), bloomOn ? 1 : 0);
   gl.uniform1f(u(showProg,'uBloomStr'), bloomStr);
   gl.uniform1f(u(showProg,'uBloomThr'), bloomThr);
+  gl.uniform1i(u(showProg,'uVignette'), vignetteOn ? 1 : 0);
+  gl.uniform1f(u(showProg,'uVigStr'), vigStr);
+  gl.uniform1f(u(showProg,'uGamma'), gamma);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   frame++;
