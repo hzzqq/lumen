@@ -76,7 +76,7 @@ npm test
 # _scene_test.js     (14/14) 场景预设 JSON：纯数据 / 字段全往返 / 类型守卫
 # _tonemap_test.js   (20/20) 色调映射数学：ACES/Reinhard/Uncharted2/Linear 单调/有界/渐近/接线
 # _presets_test.js   (50/50) 场景预设画廊：5 套配置结构 / 归一化 / 序列化往返 / UI 接线 / 字段计数(25)
-# 合计 12 套、180 项全通过
+# 合计 12 套、192 项全通过
 ```
 
 ## 📄 许可
