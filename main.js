@@ -36,11 +36,16 @@ uniform vec3  uCamUp;
 uniform vec3  uCamFwd;
 uniform float uFov;
 uniform float uTime;
+uniform int   uFrame;       // 累积帧号（黄金比渐进采样用，逐帧变化）
 uniform float uFocus;       // 对焦距离
 uniform float uAperture;    // 光圈半径（0 = 关闭景深）
+uniform vec3  uSunDir;      // 太阳方向（单位向量，由方位角/高度角计算，影响天空太阳盘与雾照明）
+uniform float uSunInt;      // 太阳强度（0 = 无太阳盘/辉光，默认 1）
+uniform float uRough;       // 金属粗糙度（0 = 镜面，1 = 宽瓣模糊反射，GGX 风格微面元近似）
 uniform float uFog;         // 体积雾密度（0 = 关闭）
 uniform float uRR;          // 俄罗斯轮盘提前终止（0 = 关闭）
 uniform float uNEE;         // 直接光采样 NEE（0 = 关闭，回退纯路径追踪）
+uniform float uJitter;      // 黄金比渐进采样强度(0=关闭, 1=像素内全幅抖动, 逐帧在像素内偏移主射线)
 
 #define TRI_W 1024
 #define NODE_W 1024
@@ -315,10 +320,9 @@ vec3 sky(vec3 d){
   vec3 col;
   if(y>0.0) col = mix(horizon, zenith, pow(clamp(y,0.0,1.0),0.5));
   else col = mix(horizon, ground, pow(clamp(-y,0.0,1.0),0.4));
-  vec3 sunDir = normalize(vec3(0.55,0.72,-0.42));
-  float s = max(dot(d,sunDir),0.0);
-  col += vec3(22.0,18.0,13.0) * pow(s, 1500.0);   // 太阳盘
-  col += vec3(0.8,0.7,0.55) * pow(s, 6.0);        // 太阳辉光
+  float s = max(dot(d, uSunDir), 0.0);
+  col += vec3(22.0,18.0,13.0) * uSunInt * pow(s, 1500.0);   // 太阳盘（强度可调）
+  col += vec3(0.8,0.7,0.55) * uSunInt * pow(s, 6.0);        // 太阳辉光（强度可调）
   return col * uEnv;
 }
 
@@ -380,7 +384,9 @@ vec3 radiance(vec3 ro, vec3 rd){
     }
     if(h.mat==1){
       vec3 r = reflect(rd,h.n);
-      rd = normalize(r + 0.04*randUnit());
+      // 金属粗糙度 uRough：0=镜面，1=宽瓣模糊反射（GGX 风格微面元近似，扰动幅度 mix(0.04,1.2,uRough)）
+      vec3 lobe = randUnit() * mix(0.04, 1.2, uRough);
+      rd = normalize(r + lobe);
       ro = h.p + h.n*EPS;
       fromDiffuse = false;          // 镜面反弹：后续若命中面光源仍计入直接光
     } else if(h.mat==2){
@@ -413,6 +419,14 @@ void main(){
   rngState = uint(gl_FragCoord.x)*1973u + uint(gl_FragCoord.y)*9277u + uint(uTime*60.0)*26699u + 1u;
   vec2 uv = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
   uv.x *= uRes.x / uRes.y;
+  // 黄金比(R2 低差异二维序列)渐进采样：逐帧在像素内偏移主射线，
+  // 多帧累积的 AA 噪点分布更均匀、收敛更快（uJitter=0 关闭）。
+  if(uJitter > 0.0){
+    vec2 r2 = fract(vec2(0.7548776662, 0.5698402909) * float(uFrame + 1));
+    vec2 jp = (r2 - 0.5) * uJitter;
+    uv.x += jp.x * (2.0 / uRes.x);
+    uv.y += jp.y * (2.0 / uRes.y);
+  }
   float tf = tan(uFov*0.5);
   vec3 ro = uCamPos;
   vec3 rd = normalize(uCamFwd + uv.x*tf*uCamRight + uv.y*tf*uCamUp);
@@ -880,7 +894,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0;
 // ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
 // 纯函数：不依赖 THREE，便于 Node 测试与复用。
 function serializeScene(s){
@@ -890,6 +904,7 @@ function serializeScene(s){
     target: Array.isArray(s.target) ? [s.target[0], s.target[1], s.target[2]] : [0,0,0],
     maxBounces: s.maxBounces, resScale: s.resScale, exposure: s.exposure,
     focusDist: s.focusDist, aperture: s.aperture, maxSamples: s.maxSamples,
+    sunAz: s.sunAz, sunEl: s.sunEl, sunInt: s.sunInt, rough: s.rough, jitter: s.jitter,
     toneMode: s.toneMode, autoExp: s.autoExp, fogDensity: s.fogDensity, rrOn: s.rrOn,
     denoiseOn: s.denoiseOn, denIters: s.denIters, neeOn: s.neeOn, envInt: s.envInt,
     bloomOn: s.bloomOn, bloomStr: s.bloomStr, bloomThr: s.bloomThr, vignetteOn: s.vignetteOn, vigStr: s.vigStr,
@@ -907,6 +922,7 @@ function deserializeScene(d){
     sceneId: num('sceneId', 0), theta: num('theta', 0.6), phi: num('phi', 1.15), radius: num('radius', 9),
     target: t, maxBounces: num('maxBounces', 6), resScale: num('resScale', 1), exposure: num('exposure', 1),
     focusDist: num('focusDist', 9), aperture: num('aperture', 0), maxSamples: num('maxSamples', 2000),
+    sunAz: num('sunAz', 35), sunEl: num('sunEl', 40), sunInt: num('sunInt', 1), rough: num('rough', 0), jitter: num('jitter', 1),
     toneMode: num('toneMode', 0), autoExp: bool('autoExp', false), fogDensity: num('fogDensity', 0), rrOn: bool('rrOn', false),
     denoiseOn: bool('denoiseOn', false), denIters: num('denIters', 3), neeOn: bool('neeOn', true), envInt: num('envInt', 1),
     bloomOn: bool('bloomOn', false), bloomStr: num('bloomStr', 0.6), bloomThr: num('bloomThr', 1.0),
@@ -918,6 +934,12 @@ function deserializeScene(d){
 }
 let avgBuf=null;
 const $ = id=>document.getElementById(id);
+// 由方位角/高度角计算太阳单位方向向量（el 为地平线以上仰角；结果单位长度）
+function computeSunDir(azDeg, elDeg){
+  const az = azDeg * Math.PI/180, el = elDeg * Math.PI/180;
+  const ce = Math.cos(el);
+  return [ce*Math.sin(az), Math.sin(el), ce*Math.cos(az)];
+}
 // ---------- 场景预设画廊：命名化的「几何 + 相机 + 渲染参数」全套配置 ----------
 const PRESETS = [
   { name:'经典展厅', sceneId:0, theta:0.6, phi:0.4, radius:11, target:[0,1.5,0], maxBounces:6, resScale:1, exposure:1.0, focusDist:9, aperture:0, maxSamples:2000, toneMode:0, autoExp:false, fogDensity:0, rrOn:false, denoiseOn:false, denIters:3, neeOn:true, envInt:1, bloomOn:false, bloomStr:0.6, bloomThr:1.0 },
@@ -935,6 +957,7 @@ function presetToParams(p){
     sceneId: num(p.sceneId, 0)|0, theta: num(p.theta, 0), phi: num(p.phi, 0), radius: num(p.radius, 10),
     target: arr3(p.target), maxBounces: num(p.maxBounces, 6)|0, resScale: num(p.resScale, 1),
     exposure: num(p.exposure, 1), focusDist: num(p.focusDist, 9), aperture: num(p.aperture, 0),
+    sunAz: num(p.sunAz, 35), sunEl: num(p.sunEl, 40), sunInt: num(p.sunInt, 1), rough: num(p.rough, 0), jitter: num(p.jitter, 1),
     maxSamples: num(p.maxSamples, 2000)|0, toneMode: num(p.toneMode, 0)|0, autoExp: bool(p.autoExp),
     fogDensity: num(p.fogDensity, 0), rrOn: bool(p.rrOn), denoiseOn: bool(p.denoiseOn), denIters: num(p.denIters, 3)|0,
     neeOn: bool(p.neeOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1),
@@ -947,6 +970,7 @@ function applyPreset(idx){
   const s = presetToParams(p);
   sceneId=s.sceneId; theta=s.theta; phi=s.phi; radius=s.radius; target=s.target.slice();
   maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
+  sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter;
   maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
   denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
   vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma;
@@ -963,6 +987,11 @@ $('env').oninput = e=>{ envInt=+e.target.value; $('envVal').textContent=envInt.t
 $('exp').oninput = e=>{ exposure=+e.target.value; $('expVal').textContent=exposure.toFixed(1); };
 $('focus').oninput = e=>{ focusDist=+e.target.value; $('focusVal').textContent=focusDist.toFixed(1); clearAccum(); };
 $('ap').oninput = e=>{ aperture=+e.target.value/100; $('apVal').textContent=aperture.toFixed(2); clearAccum(); };
+$('sunAz').oninput = e=>{ sunAz=+e.target.value; $('sunAzVal').textContent=sunAz; clearAccum(); };
+$('sunEl').oninput = e=>{ sunEl=+e.target.value; $('sunElVal').textContent=sunEl; clearAccum(); };
+$('sunInt').oninput = e=>{ sunInt=+e.target.value/100; $('sunIntVal').textContent=sunInt.toFixed(2); clearAccum(); };
+$('rough').oninput = e=>{ rough=+e.target.value/100; $('roughVal').textContent=rough.toFixed(2); clearAccum(); };
+$('jitter').oninput = e=>{ jitter=+e.target.value/100; $('jitterVal').textContent=jitter.toFixed(2); clearAccum(); };
 $('reset').onclick = ()=> clearAccum();
 $('pause').onclick = ()=> paused=!paused;
 $('rotate').onclick = ()=> autoRotate = !autoRotate;
@@ -999,13 +1028,18 @@ function syncSceneUI(){
   if($('grainStr')) $('grainStr').value = Math.round(grainStr * 100);
   if($('gamma')) $('gamma').value = Math.round(gamma * 100);
   if($('ap')) $('ap').value = Math.round(aperture * 100);
+  if($('sunAz')){ $('sunAz').value = Math.round(sunAz); if($('sunAzVal')) $('sunAzVal').textContent=Math.round(sunAz); }
+  if($('sunEl')){ $('sunEl').value = Math.round(sunEl); if($('sunElVal')) $('sunElVal').textContent=Math.round(sunEl); }
+  if($('sunInt')){ $('sunInt').value = Math.round(sunInt * 100); if($('sunIntVal')) $('sunIntVal').textContent=sunInt.toFixed(2); }
+  if($('rough')){ $('rough').value = Math.round(rough * 100); if($('roughVal')) $('roughVal').textContent=rough.toFixed(2); }
+  if($('jitter')){ $('jitter').value = Math.round(jitter * 100); if($('jitterVal')) $('jitterVal').textContent=jitter.toFixed(2); }
   if($('maxspp')) $('maxspp').value = maxSamples;
   if($('exp') && $('expVal')){ $('exp').value = exposure; $('expVal').textContent = exposure.toFixed(1); }
   if($('focus') && $('focusVal')){ $('focus').value = focusDist; $('focusVal').textContent = focusDist.toFixed(1); }
 }
 $('exportScene').onclick = ()=>{
   const s = serializeScene({ sceneId, theta, phi, radius, target, maxBounces, resScale, exposure,
-    focusDist, aperture, maxSamples, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, chromaOn, chromaStr, grainOn, grainStr, gamma });
+    focusDist, aperture, maxSamples, sunAz, sunEl, sunInt, rough, jitter, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, chromaOn, chromaStr, grainOn, grainStr, gamma });
   downloadBlob('lumen_scene.json', new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' }));
 };
 $('importScene').onclick = ()=> $('sceneFile').click();
@@ -1017,6 +1051,7 @@ $('sceneFile').onchange = e=>{
       const d = JSON.parse(r.result); const s = deserializeScene(d);
       sceneId=s.sceneId; theta=s.theta; phi=s.phi; radius=s.radius; target=s.target;
       maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
+      sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter;
       maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
       denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
       vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma;
@@ -1102,6 +1137,7 @@ function loop(){
   gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, meshTex.bvhTex); gl.uniform1i(u(ptProg,'uBVH'), 2);
   gl.uniform2f(u(ptProg,'uRes'), RW, RH);
   gl.uniform1i(u(ptProg,'uSamples'), frame);
+  gl.uniform1i(u(ptProg,'uFrame'), frame);
   gl.uniform1i(u(ptProg,'uMaxBounces'), maxBounces);
   gl.uniform1i(u(ptProg,'uScene'), sceneId);
   gl.uniform1i(u(ptProg,'uHasMesh'), HAS_MESH);
@@ -1113,6 +1149,11 @@ function loop(){
   gl.uniform1f(u(ptProg,'uFov'), 50*Math.PI/180);
   gl.uniform1f(u(ptProg,'uFocus'), focusDist);
   gl.uniform1f(u(ptProg,'uAperture'), aperture);
+  const sd = computeSunDir(sunAz, sunEl);
+  gl.uniform3f(u(ptProg,'uSunDir'), sd[0], sd[1], sd[2]);
+  gl.uniform1f(u(ptProg,'uSunInt'), sunInt);
+  gl.uniform1f(u(ptProg,'uRough'), rough);
+  gl.uniform1f(u(ptProg,'uJitter'), jitter);
   gl.uniform1f(u(ptProg,'uFog'), fogDensity);
   gl.uniform1f(u(ptProg,'uRR'), rrOn ? 1.0 : 0.0);
   gl.uniform1f(u(ptProg,'uNEE'), neeOn ? 1.0 : 0.0);
