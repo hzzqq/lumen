@@ -111,8 +111,30 @@
     </div>
 
     <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="nee" checked /> 直接光采样 NEE（降噪，场景 2/5/6 生效）
+      </label>
+    </div>
+
+    <div class="row">
       <label>降噪迭代次数 <span class="val" id="denItersVal">3</span></label>
       <input type="range" id="denIters" min="1" max="5" step="1" value="3" />
+    </div>
+
+    <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="bloom" /> 泛光 Bloom（亮部光晕后处理）
+      </label>
+    </div>
+
+    <div class="row">
+      <label>泛光强度 <span class="val" id="bloomStrVal">0.60</span></label>
+      <input type="range" id="bloomStr" min="0" max="200" step="5" value="60" />
+    </div>
+
+    <div class="row">
+      <label>泛光阈值 <span class="val" id="bloomThrVal">1.00</span></label>
+      <input type="range" id="bloomThr" min="0" max="400" step="5" value="100" />
     </div>
 
     <div class="row">
@@ -145,6 +167,11 @@
       <button id="rotate">自动旋转</button>
       <button id="save">保存 PNG</button>
     </div>
+    <div class="row tools" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <button id="exportScene">⬇ 导出场景</button>
+      <button id="importScene">⬆ 导入场景</button>
+    </div>
+    <input type="file" id="sceneFile" accept="application/json,.json" style="display:none" />
 
     <div class="hint">
       纯手写 GLSL 路径追踪：蒙特卡洛软阴影、菲涅尔反射/折射、

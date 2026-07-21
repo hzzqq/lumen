@@ -40,6 +40,7 @@ uniform float uFocus;       // 对焦距离
 uniform float uAperture;    // 光圈半径（0 = 关闭景深）
 uniform float uFog;         // 体积雾密度（0 = 关闭）
 uniform float uRR;          // 俄罗斯轮盘提前终止（0 = 关闭）
+uniform float uNEE;         // 直接光采样 NEE（0 = 关闭，回退纯路径追踪）
 
 #define TRI_W 1024
 #define NODE_W 1024
@@ -321,8 +322,35 @@ vec3 sky(vec3 d){
   return col * uEnv;
 }
 
+// 直接光采样（NEE / next-event estimation）：在漫反射命中点朝“面光源”（有限球光源）采样一点，
+// 发阴影射线判断是否被遮挡，未被遮挡则按面积采样 pdf 计入直接光照，显著降低蒙特卡洛噪声。
+// 仅对场景 2/5/6 的有限球光源生效（其余场景无面光源，返回 0——仍由天空/反弹提供照明，不重复计）。
+vec3 neeDirect(vec3 p, vec3 n, vec3 albedo){
+  vec3 C; float R; vec3 Le; bool ok = false;
+  if(uScene==2){ C=vec3(0.0,4.5,0.0); R=1.1; Le=vec3(18.0); ok=true; }
+  else if(uScene==5){ C=vec3(0.0,5.0,0.0); R=1.4; Le=vec3(16.0); ok=true; }
+  else if(uScene==6){ C=vec3(0.0,4.0,0.0); R=2.0; Le=vec3(14.0); ok=true; }
+  if(!ok) return vec3(0.0);
+  vec3 lp = C + randUnit() * R;            // 球面均匀采样一点
+  vec3 wi = lp - p;
+  float dist2 = dot(wi, wi);
+  float dist = sqrt(dist2);
+  wi /= dist;
+  float cosS = dot(n, wi);
+  if(cosS <= 0.0) return vec3(0.0);   // 接收面背向光源
+  Hit sh = scene(p + n*EPS, wi);
+  if(sh.hit && sh.t < dist - EPS) return vec3(0.0);  // 被遮挡
+  vec3 ln = normalize(lp - C);             // 光源外法线
+  float cosL = dot(ln, -wi);
+  if(cosL <= 0.0) return vec3(0.0);   // 光源背面
+  float pdfA = 1.0 / (4.0*PI*R*R);     // 球面均匀采样面积 pdf
+  float G = cosS * cosL / dist2;
+  return albedo * (1.0/PI) * Le * G / pdfA;
+}
+
 vec3 radiance(vec3 ro, vec3 rd){
   vec3 L = vec3(0.0); vec3 thr = vec3(1.0);
+  bool fromDiffuse = false;          // 上一 bounce 是否为漫反射（用于避免 NEE 与反弹双重计光）
   for(int b=0;b<uMaxBounces;b++){
     Hit h = scene(ro,rd);
     // 体积雾：按段长衰减贡献并叠加天空照亮的雾
@@ -334,7 +362,15 @@ vec3 radiance(vec3 ro, vec3 rd){
       thr *= (1.0 - fogA);
       if(!h.hit){ break; }
     } else if(!h.hit){ L += thr*sky(rd); break; }
-    if(h.mat==3){ L += thr*h.emission; break; }
+    // 命中面光源：NEE 已覆盖的有限球光源（场景 2/5/6）在漫反射 bounce 上跳过，避免重复计光；
+    // 其余场景（如 Cornell 无限平面光）仍由反弹直接照亮，不跳过。
+    if(h.mat==3){
+      bool neeLit = (uScene==2 || uScene==5 || uScene==6);
+      if(!fromDiffuse || !neeLit) L += thr*h.emission;
+      break;
+    }
+    // 直接光采样（NEE）：漫反射命中点朝面光源采样，显著降低噪声
+    if(uNEE > 0.5 && h.mat==0){ L += thr * neeDirect(h.p, h.n, h.albedo); }
     thr *= h.albedo;
     // 俄罗斯轮盘：深度足够后按吞吐概率提前终止低贡献路径（同等开销采样更多路径 → 效率提升）
     if(uRR > 0.5 && b > 3){
@@ -346,6 +382,7 @@ vec3 radiance(vec3 ro, vec3 rd){
       vec3 r = reflect(rd,h.n);
       rd = normalize(r + 0.04*randUnit());
       ro = h.p + h.n*EPS;
+      fromDiffuse = false;          // 镜面反弹：后续若命中面光源仍计入直接光
     } else if(h.mat==2){
       bool into = dot(rd,h.n)<0.0;
       vec3 n = into? h.n : -h.n;
@@ -357,6 +394,7 @@ vec3 radiance(vec3 ro, vec3 rd){
       if(k<0.0 || rnd()<R){ rd = reflect(rd,n); }
       else { rd = normalize(refract(rd,n,eta)); }
       ro = h.p + n*EPS* (into?1.0:-1.0);
+      fromDiffuse = false;          // 折射反弹：同上
     } else {
       vec3 up = abs(h.n.z)<0.999? vec3(0,0,1):vec3(1,0,0);
       vec3 t = normalize(cross(up,h.n));
@@ -365,6 +403,7 @@ vec3 radiance(vec3 ro, vec3 rd){
       float ph=6.2831853*r1, r=sqrt(r2);
       vec3 dir = normalize(t*(r*cos(ph)) + b*(r*sin(ph)) + h.n*sqrt(max(0.0,1.0-r2)));
       rd = dir; ro = h.p + h.n*EPS;
+      fromDiffuse = true;           // 漫反射反弹：后续命中面光源由 NEE 覆盖，不重复计
     }
   }
   return L;
@@ -400,6 +439,9 @@ uniform int   uTone;
 uniform int   uDenoise;    // 0 关闭 1 开启 A-trous 边缘感知降噪
 uniform int   uDenIters;   // 小波迭代次数 (1..5)
 uniform vec2  uTexSize;    // 累积缓冲分辨率(像素)
+uniform int   uBloom;      // 0 关闭 1 开启 泛光后处理
+uniform float uBloomStr;   // 泛光强度(加性叠加系数)
+uniform float uBloomThr;   // 亮度阈值(超出部分才泛光, soft-knee)
 vec3 aces(vec3 x){
   float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
   return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
@@ -437,9 +479,35 @@ vec3 denoiseAtrus(vec3 center, vec2 baseUv, int iters){
   }
   return c;
 }
+vec3 sampleHDR(vec2 uv){ return texture(uAccum, uv).rgb / float(max(uSamples,1)); }
+// 亮度阈值提取(soft-knee)：仅保留亮度超过阈值的部分，平滑过渡不产生硬边
+vec3 brightPass(vec3 c, float thr){
+  float l = dot(c, vec3(0.299,0.587,0.114));
+  float k = max(l - thr, 0.0) / max(l, 1e-4);   // 亮度超阈占比 ∈[0,1)
+  return c * k;
+}
+// 泛光：对亮部做多尺度高斯模糊(在 HDR 累积图上多点采样, 步长 2/4/8 像素扩散光晕)
+vec3 bloom(vec2 baseUv, float thr){
+  vec3 acc = vec3(0.0);
+  float wSum = 0.0;
+  for(int s=0; s<3; s++){
+    float step = float(1 << s);                   // 1,2,4 像素(最细尺度覆盖相邻像素, 扩散连续)
+    for(int x=-2; x<=2; x++){
+      for(int y=-2; y<=2; y++){
+        vec2 uv = baseUv + vec2(float(x),float(y)) * step / uTexSize;
+        vec3 hb = brightPass(sampleHDR(uv), thr);
+        float w = exp(-float(x*x + y*y) / 4.0);   // 5x5 高斯权重
+        acc += hb * w;
+        wSum += w;
+      }
+    }
+  }
+  return acc / max(wSum, 1e-4);
+}
 void main(){
   vec3 c = texture(uAccum, vUv).rgb / float(max(uSamples,1));
   if(uDenoise == 1){ c = denoiseAtrus(c, vUv, uDenIters); }
+  if(uBloom == 1){ c += bloom(vUv, uBloomThr) * uBloomStr; }   // 加性叠加泛光光晕
   c = tonemap(c * uExposure, uTone);
   c = pow(c, vec3(1.0/2.2));
   outColor = vec4(c,1.0);
@@ -778,7 +846,35 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0;
+// ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
+// 纯函数：不依赖 THREE，便于 Node 测试与复用。
+function serializeScene(s){
+  return {
+    v: 1,
+    sceneId: s.sceneId, theta: s.theta, phi: s.phi, radius: s.radius,
+    target: Array.isArray(s.target) ? [s.target[0], s.target[1], s.target[2]] : [0,0,0],
+    maxBounces: s.maxBounces, resScale: s.resScale, exposure: s.exposure,
+    focusDist: s.focusDist, aperture: s.aperture, maxSamples: s.maxSamples,
+    toneMode: s.toneMode, autoExp: s.autoExp, fogDensity: s.fogDensity, rrOn: s.rrOn,
+    denoiseOn: s.denoiseOn, denIters: s.denIters, neeOn: s.neeOn, envInt: s.envInt,
+    bloomOn: s.bloomOn, bloomStr: s.bloomStr, bloomThr: s.bloomThr
+  };
+}
+function deserializeScene(d){
+  d = d || {};
+  const num = (k, def) => (typeof d[k] === 'number' && isFinite(d[k])) ? d[k] : def;
+  const bool = (k, def) => (typeof d[k] === 'boolean') ? d[k] : def;
+  const t = (Array.isArray(d.target) && d.target.length >= 3) ? [d.target[0], d.target[1], d.target[2]] : [0,0,0];
+  return {
+    sceneId: num('sceneId', 0), theta: num('theta', 0.6), phi: num('phi', 1.15), radius: num('radius', 9),
+    target: t, maxBounces: num('maxBounces', 6), resScale: num('resScale', 1), exposure: num('exposure', 1),
+    focusDist: num('focusDist', 9), aperture: num('aperture', 0), maxSamples: num('maxSamples', 2000),
+    toneMode: num('toneMode', 0), autoExp: bool('autoExp', false), fogDensity: num('fogDensity', 0), rrOn: bool('rrOn', false),
+    denoiseOn: bool('denoiseOn', false), denIters: num('denIters', 3), neeOn: bool('neeOn', true), envInt: num('envInt', 1),
+    bloomOn: bool('bloomOn', false), bloomStr: num('bloomStr', 0.6), bloomThr: num('bloomThr', 1.0)
+  };
+}
 let avgBuf=null;
 const $ = id=>document.getElementById(id);
 $('scene').onchange = e=>{
@@ -802,12 +898,60 @@ $('save').onclick = ()=>{
   a.click();
 };
 $('maxspp').oninput = e=>{ maxSamples = +e.target.value; $('maxsppVal').textContent = maxSamples; };
+// ---------- 场景预设导出 / 导入 ----------
+function downloadBlob(name, blob){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function syncSceneUI(){
+  if($('scene')) $('scene').value = String(sceneId);
+  if($('tone')) $('tone').value = String(toneMode);
+  if($('fog')) $('fog').value = fogDensity;
+  if($('rr')) $('rr').checked = rrOn;
+  if($('denoise')) $('denoise').checked = denoiseOn;
+  if($('nee')) $('nee').checked = neeOn;
+  if($('bloom')) $('bloom').checked = bloomOn;
+  if($('denIters')) $('denIters').value = denIters;
+  if($('bloomStr')) $('bloomStr').value = Math.round(bloomStr * 100);
+  if($('bloomThr')) $('bloomThr').value = Math.round(bloomThr * 100);
+  if($('ap')) $('ap').value = Math.round(aperture * 100);
+  if($('maxspp')) $('maxspp').value = maxSamples;
+  if($('exp') && $('expVal')){ $('exp').value = exposure; $('expVal').textContent = exposure.toFixed(1); }
+  if($('focus') && $('focusVal')){ $('focus').value = focusDist; $('focusVal').textContent = focusDist.toFixed(1); }
+}
+$('exportScene').onclick = ()=>{
+  const s = serializeScene({ sceneId, theta, phi, radius, target, maxBounces, resScale, exposure,
+    focusDist, aperture, maxSamples, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr });
+  downloadBlob('lumen_scene.json', new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' }));
+};
+$('importScene').onclick = ()=> $('sceneFile').click();
+$('sceneFile').onchange = e=>{
+  const f = e.target.files && e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const d = JSON.parse(r.result); const s = deserializeScene(d);
+      sceneId=s.sceneId; theta=s.theta; phi=s.phi; radius=s.radius; target=s.target;
+      maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
+      maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
+      denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
+      syncSceneUI(); clearAccum();
+    }catch(err){ /* 解析失败静默忽略 */ }
+  };
+  r.readAsText(f); e.target.value = '';
+};
 $('tone').onchange = e=>{ toneMode = +e.target.value; };
 $('autoexp').onchange = e=>{ autoExp = e.target.checked; };
 $('fog').oninput = e=>{ fogDensity = +e.target.value; $('fogVal').textContent = fogDensity.toFixed(2); clearAccum(); };
 $('rr').onchange = e=>{ rrOn = e.target.checked; clearAccum(); };
 $('denoise').onchange = e=>{ denoiseOn = e.target.checked; };
+$('nee').onchange = e=>{ neeOn = e.target.checked; clearAccum(); };
 $('denIters').oninput = e=>{ denIters=+e.target.value; $('denItersVal').textContent=denIters; };
+$('bloom').onchange = e=>{ bloomOn = e.target.checked; };   // 后处理, 无需清累积
+$('bloomStr').oninput = e=>{ bloomStr=+e.target.value/100; $('bloomStrVal').textContent=bloomStr.toFixed(2); };
+$('bloomThr').oninput = e=>{ bloomThr=+e.target.value/100; $('bloomThrVal').textContent=bloomThr.toFixed(2); };
 // 导入外部模型：OBJ / glTF（最简解析），替换当前网格并重建 BVH
 $('modelFile').addEventListener('change', e=>{
   const file = e.target.files && e.target.files[0]; if(!file) return;
@@ -880,6 +1024,7 @@ function loop(){
   gl.uniform1f(u(ptProg,'uAperture'), aperture);
   gl.uniform1f(u(ptProg,'uFog'), fogDensity);
   gl.uniform1f(u(ptProg,'uRR'), rrOn ? 1.0 : 0.0);
+  gl.uniform1f(u(ptProg,'uNEE'), neeOn ? 1.0 : 0.0);
   gl.uniform1f(u(ptProg,'uTime'), now/1000);
   gl.bindVertexArray(quad);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -904,6 +1049,9 @@ function loop(){
   gl.uniform1i(u(showProg,'uDenoise'), denoiseOn ? 1 : 0);
   gl.uniform1i(u(showProg,'uDenIters'), denIters);
   gl.uniform2f(u(showProg,'uTexSize'), RW, RH);
+  gl.uniform1i(u(showProg,'uBloom'), bloomOn ? 1 : 0);
+  gl.uniform1f(u(showProg,'uBloomStr'), bloomStr);
+  gl.uniform1f(u(showProg,'uBloomThr'), bloomThr);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   frame++;
