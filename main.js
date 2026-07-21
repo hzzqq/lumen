@@ -43,9 +43,14 @@ uniform vec3  uSunDir;      // 太阳方向（单位向量，由方位角/高度
 uniform float uSunInt;      // 太阳强度（0 = 无太阳盘/辉光，默认 1）
 uniform float uRough;       // 金属粗糙度（0 = 镜面，1 = 宽瓣模糊反射，GGX 风格微面元近似）
 uniform float uFog;         // 体积雾密度（0 = 关闭）
+uniform vec3  uFogColor;     // 雾颜色（线性 RGB，默认淡蓝灰）
+uniform vec3  uBgTop;        // 天空顶色（zenith，线性 RGB）
+uniform vec3  uBgBottom;     // 天空底色（horizon，线性 RGB）
 uniform float uRR;          // 俄罗斯轮盘提前终止（0 = 关闭）
 uniform float uNEE;         // 直接光采样 NEE（0 = 关闭，回退纯路径追踪）
 uniform float uJitter;      // 黄金比渐进采样强度(0=关闭, 1=像素内全幅抖动, 逐帧在像素内偏移主射线)
+uniform int   uDebug;        // 调试视图：0=成品(beauty) 1=反照率(albedo) 2=法线(normal) 3=景深(depth)
+uniform float uClamp;        // 萤火虫钳制：单样本辐射上限（>0 生效，0=关闭），抑制爆点噪声
 
 #define TRI_W 1024
 #define NODE_W 1024
@@ -314,8 +319,8 @@ Hit scene(vec3 ro, vec3 rd){
 // 程序化 HDRI 风格环境贴图（渐变天空 + 太阳 + 地面）
 vec3 sky(vec3 d){
   float y = d.y;
-  vec3 zenith = vec3(0.20,0.36,0.66);
-  vec3 horizon = vec3(0.62,0.70,0.80);
+  vec3 zenith = uBgTop;
+  vec3 horizon = uBgBottom;
   vec3 ground = vec3(0.10,0.09,0.085);
   vec3 col;
   if(y>0.0) col = mix(horizon, zenith, pow(clamp(y,0.0,1.0),0.5));
@@ -357,11 +362,17 @@ vec3 radiance(vec3 ro, vec3 rd){
   bool fromDiffuse = false;          // 上一 bounce 是否为漫反射（用于避免 NEE 与反弹双重计光）
   for(int b=0;b<uMaxBounces;b++){
     Hit h = scene(ro,rd);
+    // 调试视图：仅看首条命中，跳过完整路径追踪（美容/反照率/法线/景深）
+    if(b == 0 && uDebug != 0){
+      if(uDebug == 1) return h.hit ? h.albedo : vec3(0.0);                 // 反照率
+      else if(uDebug == 2) return h.hit ? h.n*0.5+0.5 : vec3(0.0);         // 法线
+      else if(uDebug == 3) return vec3(clamp(h.hit ? h.t/12.0 : 1.0, 0.0, 1.0)); // 景深(归一化)
+    }
     // 体积雾：按段长衰减贡献并叠加天空照亮的雾
     float seg = h.hit ? h.t : 1e9;
     if(uFog > 0.0001){
       float fogA = 1.0 - exp(-uFog * seg);
-      vec3 fogCol = sky(rd) * uEnv;
+      vec3 fogCol = uFogColor;
       L += thr * fogCol * fogA;
       thr *= (1.0 - fogA);
       if(!h.hit){ break; }
@@ -383,6 +394,7 @@ vec3 radiance(vec3 ro, vec3 rd){
       thr /= max(1.0 - q, 1e-3);
     }
     if(h.mat==1){
+
       vec3 r = reflect(rd,h.n);
       // 金属粗糙度 uRough：0=镜面，1=宽瓣模糊反射（GGX 风格微面元近似，扰动幅度 mix(0.04,1.2,uRough)）
       vec3 lobe = randUnit() * mix(0.04, 1.2, uRough);
@@ -412,6 +424,7 @@ vec3 radiance(vec3 ro, vec3 rd){
       fromDiffuse = true;           // 漫反射反弹：后续命中面光源由 NEE 覆盖，不重复计
     }
   }
+  if(uClamp > 0.0) L = min(L, vec3(uClamp));   // 萤火虫钳制：单样本辐射上限，抑制爆点噪声
   return L;
 }
 
@@ -894,7 +907,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0;
 // ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
 // 纯函数：不依赖 THREE，便于 Node 测试与复用。
 function serializeScene(s){
@@ -904,13 +917,13 @@ function serializeScene(s){
     target: Array.isArray(s.target) ? [s.target[0], s.target[1], s.target[2]] : [0,0,0],
     maxBounces: s.maxBounces, resScale: s.resScale, exposure: s.exposure,
     focusDist: s.focusDist, aperture: s.aperture, maxSamples: s.maxSamples,
-    sunAz: s.sunAz, sunEl: s.sunEl, sunInt: s.sunInt, rough: s.rough, jitter: s.jitter,
+    sunAz: s.sunAz, sunEl: s.sunEl, sunInt: s.sunInt, rough: s.rough, jitter: s.jitter, fogColor: s.fogColor, fov: s.fov, bgTop: s.bgTop, bgBottom: s.bgBottom, debugMode: s.debugMode,
     toneMode: s.toneMode, autoExp: s.autoExp, fogDensity: s.fogDensity, rrOn: s.rrOn,
     denoiseOn: s.denoiseOn, denIters: s.denIters, neeOn: s.neeOn, envInt: s.envInt,
     bloomOn: s.bloomOn, bloomStr: s.bloomStr, bloomThr: s.bloomThr, vignetteOn: s.vignetteOn, vigStr: s.vigStr,
     chromaOn: s.chromaOn, chromaStr: s.chromaStr,
     grainOn: s.grainOn, grainStr: s.grainStr,
-    gamma: s.gamma
+    gamma: s.gamma, clampRad: s.clampRad
   };
 }
 function deserializeScene(d){
@@ -923,17 +936,25 @@ function deserializeScene(d){
     target: t, maxBounces: num('maxBounces', 6), resScale: num('resScale', 1), exposure: num('exposure', 1),
     focusDist: num('focusDist', 9), aperture: num('aperture', 0), maxSamples: num('maxSamples', 2000),
     sunAz: num('sunAz', 35), sunEl: num('sunEl', 40), sunInt: num('sunInt', 1), rough: num('rough', 0), jitter: num('jitter', 1),
+    fogColor: (Array.isArray(d.fogColor) && d.fogColor.length===3) ? d.fogColor.map(Number) : [0.8,0.85,0.9],
+    fov: num('fov', 50),
+    bgTop: (Array.isArray(d.bgTop) && d.bgTop.length===3) ? d.bgTop.map(Number) : [0.20,0.36,0.66],
+    bgBottom: (Array.isArray(d.bgBottom) && d.bgBottom.length===3) ? d.bgBottom.map(Number) : [0.62,0.70,0.80],
+    debugMode: num('debugMode', 0)|0,
     toneMode: num('toneMode', 0), autoExp: bool('autoExp', false), fogDensity: num('fogDensity', 0), rrOn: bool('rrOn', false),
     denoiseOn: bool('denoiseOn', false), denIters: num('denIters', 3), neeOn: bool('neeOn', true), envInt: num('envInt', 1),
     bloomOn: bool('bloomOn', false), bloomStr: num('bloomStr', 0.6), bloomThr: num('bloomThr', 1.0),
     vignetteOn: bool('vignetteOn', false), vigStr: num('vigStr', 0.5),
     chromaOn: bool('chromaOn', false), chromaStr: num('chromaStr', 0.5),
     grainOn: bool('grainOn', false), grainStr: num('grainStr', 0.08),
-    gamma: num('gamma', 2.2)
+    gamma: num('gamma', 2.2), clampRad: num('clampRad', 0)
   };
 }
 let avgBuf=null;
 const $ = id=>document.getElementById(id);
+// 十六进制颜色 <-> 线性 RGB(0..1) 互转，供雾颜色取色器使用
+const hex2rgb = h => [parseInt(h.slice(1,3),16)/255, parseInt(h.slice(3,5),16)/255, parseInt(h.slice(5,7),16)/255];
+const rgb2hex = c => '#' + c.map(v=>Math.max(0,Math.min(255,Math.round(v*255))).toString(16).padStart(2,'0')).join('');
 // 由方位角/高度角计算太阳单位方向向量（el 为地平线以上仰角；结果单位长度）
 function computeSunDir(azDeg, elDeg){
   const az = azDeg * Math.PI/180, el = elDeg * Math.PI/180;
@@ -958,11 +979,16 @@ function presetToParams(p){
     target: arr3(p.target), maxBounces: num(p.maxBounces, 6)|0, resScale: num(p.resScale, 1),
     exposure: num(p.exposure, 1), focusDist: num(p.focusDist, 9), aperture: num(p.aperture, 0),
     sunAz: num(p.sunAz, 35), sunEl: num(p.sunEl, 40), sunInt: num(p.sunInt, 1), rough: num(p.rough, 0), jitter: num(p.jitter, 1),
+    fogColor: (Array.isArray(p.fogColor) && p.fogColor.length===3) ? p.fogColor.map(Number) : [0.8,0.85,0.9],
+    fov: num(p.fov, 50),
+    bgTop: (Array.isArray(p.bgTop) && p.bgTop.length===3) ? p.bgTop.map(Number) : [0.20,0.36,0.66],
+    bgBottom: (Array.isArray(p.bgBottom) && p.bgBottom.length===3) ? p.bgBottom.map(Number) : [0.62,0.70,0.80],
+    debugMode: num(p.debugMode, 0)|0,
     maxSamples: num(p.maxSamples, 2000)|0, toneMode: num(p.toneMode, 0)|0, autoExp: bool(p.autoExp),
     fogDensity: num(p.fogDensity, 0), rrOn: bool(p.rrOn), denoiseOn: bool(p.denoiseOn), denIters: num(p.denIters, 3)|0,
     neeOn: bool(p.neeOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1),
     vignetteOn: bool(p.vignetteOn), vigStr: num(p.vigStr, 0.5),
-    gamma: num(p.gamma, 2.2)
+    gamma: num(p.gamma, 2.2), clampRad: num(p.clampRad, 0)
   };
 }
 function applyPreset(idx){
@@ -970,10 +996,10 @@ function applyPreset(idx){
   const s = presetToParams(p);
   sceneId=s.sceneId; theta=s.theta; phi=s.phi; radius=s.radius; target=s.target.slice();
   maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
-  sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter;
+  sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
   maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
   denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
-  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma;
+  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma; clampRad=s.clampRad;
   syncSceneUI(); clearAccum();
 }
 $('scene').onchange = e=>{
@@ -1013,6 +1039,11 @@ function syncSceneUI(){
   if($('scene')) $('scene').value = String(sceneId);
   if($('tone')) $('tone').value = String(toneMode);
   if($('fog')) $('fog').value = fogDensity;
+  if($('fogColor')) $('fogColor').value = rgb2hex(fogColor);
+  if($('fov')){ $('fov').value = fov; if($('fovVal')) $('fovVal').textContent = fov + '°'; }
+  if($('bgTop')) $('bgTop').value = rgb2hex(bgTop);
+  if($('bgBottom')) $('bgBottom').value = rgb2hex(bgBottom);
+  if($('debug')) $('debug').value = String(debugMode);
   if($('rr')) $('rr').checked = rrOn;
   if($('denoise')) $('denoise').checked = denoiseOn;
   if($('nee')) $('nee').checked = neeOn;
@@ -1027,6 +1058,7 @@ function syncSceneUI(){
   if($('grain')) $('grain').checked = grainOn;
   if($('grainStr')) $('grainStr').value = Math.round(grainStr * 100);
   if($('gamma')) $('gamma').value = Math.round(gamma * 100);
+  if($('firefly')) $('firefly').value = clampRad;
   if($('ap')) $('ap').value = Math.round(aperture * 100);
   if($('sunAz')){ $('sunAz').value = Math.round(sunAz); if($('sunAzVal')) $('sunAzVal').textContent=Math.round(sunAz); }
   if($('sunEl')){ $('sunEl').value = Math.round(sunEl); if($('sunElVal')) $('sunElVal').textContent=Math.round(sunEl); }
@@ -1039,7 +1071,7 @@ function syncSceneUI(){
 }
 $('exportScene').onclick = ()=>{
   const s = serializeScene({ sceneId, theta, phi, radius, target, maxBounces, resScale, exposure,
-    focusDist, aperture, maxSamples, sunAz, sunEl, sunInt, rough, jitter, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, chromaOn, chromaStr, grainOn, grainStr, gamma });
+    focusDist, aperture, maxSamples, sunAz, sunEl, sunInt, rough, jitter, fogColor, fov, bgTop, bgBottom, debugMode, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, chromaOn, chromaStr, grainOn, grainStr, gamma, clampRad });
   downloadBlob('lumen_scene.json', new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' }));
 };
 $('importScene').onclick = ()=> $('sceneFile').click();
@@ -1051,7 +1083,7 @@ $('sceneFile').onchange = e=>{
       const d = JSON.parse(r.result); const s = deserializeScene(d);
       sceneId=s.sceneId; theta=s.theta; phi=s.phi; radius=s.radius; target=s.target;
       maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
-      sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter;
+      sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
       maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
       denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
       vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma;
@@ -1064,6 +1096,12 @@ $('tone').onchange = e=>{ toneMode = +e.target.value; };
 $('preset').onchange = e=>{ applyPreset(+e.target.value); };
 $('autoexp').onchange = e=>{ autoExp = e.target.checked; };
 $('fog').oninput = e=>{ fogDensity = +e.target.value; $('fogVal').textContent = fogDensity.toFixed(2); clearAccum(); };
+$('fogColor').oninput = e=>{ fogColor = hex2rgb(e.target.value); clearAccum(); };
+$('fov').oninput = e=>{ fov = +e.target.value; if($('fovVal')) $('fovVal').textContent = fov + '°'; clearAccum(); };
+$('bgTop').oninput = e=>{ bgTop = hex2rgb(e.target.value); clearAccum(); };
+$('bgBottom').oninput = e=>{ bgBottom = hex2rgb(e.target.value); clearAccum(); };
+$('debug').onchange = e=>{ debugMode = +e.target.value; clearAccum(); };
+$('firefly').oninput = e=>{ clampRad = +e.target.value; $('fireflyVal') && ($('fireflyVal').textContent = clampRad); clearAccum(); };
 $('rr').onchange = e=>{ rrOn = e.target.checked; clearAccum(); };
 $('denoise').onchange = e=>{ denoiseOn = e.target.checked; };
 $('nee').onchange = e=>{ neeOn = e.target.checked; clearAccum(); };
@@ -1141,12 +1179,14 @@ function loop(){
   gl.uniform1i(u(ptProg,'uMaxBounces'), maxBounces);
   gl.uniform1i(u(ptProg,'uScene'), sceneId);
   gl.uniform1i(u(ptProg,'uHasMesh'), HAS_MESH);
+  gl.uniform1i(u(ptProg,'uDebug'), debugMode);
+  gl.uniform1f(u(ptProg,'uClamp'), clampRad);
   gl.uniform1f(u(ptProg,'uEnv'), envInt);
   gl.uniform3fv(u(ptProg,'uCamPos'), cam.pos);
   gl.uniform3fv(u(ptProg,'uCamRight'), cam.right);
   gl.uniform3fv(u(ptProg,'uCamUp'), cam.up);
   gl.uniform3fv(u(ptProg,'uCamFwd'), cam.fwd);
-  gl.uniform1f(u(ptProg,'uFov'), 50*Math.PI/180);
+  gl.uniform1f(u(ptProg,'uFov'), fov*Math.PI/180);
   gl.uniform1f(u(ptProg,'uFocus'), focusDist);
   gl.uniform1f(u(ptProg,'uAperture'), aperture);
   const sd = computeSunDir(sunAz, sunEl);
@@ -1155,6 +1195,9 @@ function loop(){
   gl.uniform1f(u(ptProg,'uRough'), rough);
   gl.uniform1f(u(ptProg,'uJitter'), jitter);
   gl.uniform1f(u(ptProg,'uFog'), fogDensity);
+  gl.uniform3f(u(ptProg,'uFogColor'), fogColor[0], fogColor[1], fogColor[2]);
+  gl.uniform3f(u(ptProg,'uBgTop'), bgTop[0], bgTop[1], bgTop[2]);
+  gl.uniform3f(u(ptProg,'uBgBottom'), bgBottom[0], bgBottom[1], bgBottom[2]);
   gl.uniform1f(u(ptProg,'uRR'), rrOn ? 1.0 : 0.0);
   gl.uniform1f(u(ptProg,'uNEE'), neeOn ? 1.0 : 0.0);
   gl.uniform1f(u(ptProg,'uTime'), now/1000);

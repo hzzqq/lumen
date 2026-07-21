@@ -32,7 +32,7 @@ for(const p of PRESETS){
 // ---- presetToParams 归一化（类型守卫）----
 {
   const s = presetToParams(PRESETS[1]); // 电影感夜景
-  ok('presetToParams 返回 30 字段（含太阳方向/强度/金属粗糙度/黄金比采样）', Object.keys(s).length === 30);
+  ok('presetToParams 返回 36 字段（含太阳/金属粗糙度/黄金比/雾颜色/FOV/背景渐变/调试视图/萤火虫钳制）', Object.keys(s).length === 36);
   ok('toneMode 取整为 3', s.toneMode === 3);
   ok('target 归一为数字数组', Array.isArray(s.target) && s.target.every(Number.isFinite));
   ok('bloomOn 布尔化 true', s.bloomOn === true);
@@ -57,7 +57,7 @@ for(const p of PRESETS){
     const dm = src.match(/function deserializeScene\(d\)\{[\s\S]*?\n\}/);
     return { serializeScene: eval('(' + sm[0] + ')'), deserializeScene: eval('(' + dm[0] + ')') };
   })();
-  // 预设是部分状态(29 字段，含太阳方向/强度/金属粗糙度)，直接拿它与反序列化得到的全量场景做全等必然不等；
+  // 预设是部分状态(33 字段，含太阳/金属粗糙度/黄金比/雾颜色/FOV/背景渐变)，直接拿它与反序列化得到的全量场景做全等必然不等；
   // 改用「默认全量场景 + 预设覆盖」构造完整场景，验证导出/导入往返不丢字段(含预设覆盖值与 gamma)。
   const full = Object.assign(deserializeScene({}), presetToParams(PRESETS[3])); // 玻璃特写
   const round = deserializeScene(serializeScene(full));
