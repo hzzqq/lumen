@@ -57,9 +57,11 @@ for(const p of PRESETS){
     const dm = src.match(/function deserializeScene\(d\)\{[\s\S]*?\n\}/);
     return { serializeScene: eval('(' + sm[0] + ')'), deserializeScene: eval('(' + dm[0] + ')') };
   })();
-  const s = presetToParams(PRESETS[3]); // 玻璃特写
-  const round = deserializeScene(serializeScene(s));
-  ok('预设经序列化往返一致', JSON.stringify(round) === JSON.stringify(s));
+  // 预设是部分状态(25 字段)，直接拿它与反序列化得到的全量场景做全等必然不等；
+  // 改用「默认全量场景 + 预设覆盖」构造完整场景，验证导出/导入往返不丢字段(含预设覆盖值与 gamma)。
+  const full = Object.assign(deserializeScene({}), presetToParams(PRESETS[3])); // 玻璃特写
+  const round = deserializeScene(serializeScene(full));
+  ok('预设经序列化往返一致', JSON.stringify(round) === JSON.stringify(full));
 }
 
 // ---- UI 接线 ----

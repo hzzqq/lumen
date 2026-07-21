@@ -165,6 +165,28 @@
     </div>
 
     <div class="row">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="chroma" /> 色差 Chromatic（镜头色散后处理）
+      </label>
+    </div>
+
+    <div class="row">
+      <label>色差强度 <span class="val" id="chromaStrVal">0.50</span></label>
+      <input type="range" id="chromaStr" min="0" max="200" step="5" value="50" />
+    </div>
+
+    <div class="row" style="margin-top:8px;">
+      <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+        <input type="checkbox" id="grain" /> 胶片噪点 Film Grain（颗粒感后处理）
+      </label>
+    </div>
+
+    <div class="row">
+      <label>噪点强度 <span class="val" id="grainStrVal">0.08</span></label>
+      <input type="range" id="grainStr" min="0" max="200" step="5" value="8" />
+    </div>
+
+    <div class="row">
       <label>导入模型（OBJ / glTF）</label>
       <input type="file" id="modelFile" accept=".obj,.gltf" />
     </div>
