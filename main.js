@@ -447,9 +447,15 @@ vec3 aces(vec3 x){
   return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
 }
 vec3 reinhard(vec3 x){ return x/(1.0+x); }
+// Uncharted2 电影级 filmic 曲线（Hejl 近似算子）：s 形 shoulders，暗部提亮、高光柔和压缩
+vec3 uncharted2(vec3 x){
+  float A=0.15, B=0.50, C=0.10, D=0.20, E=0.02, F=0.30;
+  return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F)) - E/F;
+}
 vec3 tonemap(vec3 x, int m){
   if(m==1) return reinhard(x);
   if(m==2) return clamp(x, 0.0, 1.0);   // 线性(仅裁剪)
+  if(m==3) return clamp(uncharted2(x), 0.0, 1.0);
   return aces(x);                        // 0 = ACES
 }
 // 边缘感知 A-trous 小波降噪：在累积缓冲(已取平均)上做多尺度卷积，
@@ -877,6 +883,37 @@ function deserializeScene(d){
 }
 let avgBuf=null;
 const $ = id=>document.getElementById(id);
+// ---------- 场景预设画廊：命名化的「几何 + 相机 + 渲染参数」全套配置 ----------
+const PRESETS = [
+  { name:'经典展厅', sceneId:0, theta:0.6, phi:0.4, radius:11, target:[0,1.5,0], maxBounces:6, resScale:1, exposure:1.0, focusDist:9, aperture:0, maxSamples:2000, toneMode:0, autoExp:false, fogDensity:0, rrOn:false, denoiseOn:false, denIters:3, neeOn:true, envInt:1, bloomOn:false, bloomStr:0.6, bloomThr:1.0 },
+  { name:'电影感夜景', sceneId:2, theta:0.9, phi:0.3, radius:9, target:[0,1,0], maxBounces:8, resScale:1, exposure:0.7, focusDist:6, aperture:0.02, maxSamples:3000, toneMode:3, autoExp:false, fogDensity:0, rrOn:true, denoiseOn:true, denIters:4, neeOn:true, envInt:0.6, bloomOn:true, bloomStr:0.9, bloomThr:0.8 },
+  { name:'极简高光', sceneId:1, theta:0.4, phi:0.5, radius:13, target:[0,0,0], maxBounces:4, resScale:1, exposure:1.4, focusDist:12, aperture:0, maxSamples:1500, toneMode:1, autoExp:false, fogDensity:0, rrOn:false, denoiseOn:false, denIters:3, neeOn:false, envInt:1.2, bloomOn:false, bloomStr:0.6, bloomThr:1.0 },
+  { name:'玻璃特写', sceneId:6, theta:0.7, phi:0.35, radius:6, target:[0,0.5,0], maxBounces:12, resScale:1, exposure:1.0, focusDist:3.2, aperture:0.05, maxSamples:4000, toneMode:0, autoExp:false, fogDensity:0, rrOn:true, denoiseOn:true, denIters:3, neeOn:true, envInt:1, bloomOn:false, bloomStr:0.6, bloomThr:1.0 },
+  { name:'行星远眺', sceneId:5, theta:1.1, phi:0.2, radius:16, target:[0,0,0], maxBounces:6, resScale:1, exposure:1.1, focusDist:14, aperture:0, maxSamples:2500, toneMode:2, autoExp:false, fogDensity:0, rrOn:false, denoiseOn:false, denIters:3, neeOn:true, envInt:1, bloomOn:true, bloomStr:0.5, bloomThr:0.9 }
+];
+// 纯函数：将预设对象归一化为完整参数（带类型守卫），供应用与测试复用
+function presetToParams(p){
+  const num = (v, d)=> (typeof v === 'number' && isFinite(v)) ? v : d;
+  const bool = (v)=> v === true;
+  const arr3 = (v)=> (Array.isArray(v) && v.length === 3) ? [Number(v[0]), Number(v[1]), Number(v[2])] : [0,0,0];
+  return {
+    sceneId: num(p.sceneId, 0)|0, theta: num(p.theta, 0), phi: num(p.phi, 0), radius: num(p.radius, 10),
+    target: arr3(p.target), maxBounces: num(p.maxBounces, 6)|0, resScale: num(p.resScale, 1),
+    exposure: num(p.exposure, 1), focusDist: num(p.focusDist, 9), aperture: num(p.aperture, 0),
+    maxSamples: num(p.maxSamples, 2000)|0, toneMode: num(p.toneMode, 0)|0, autoExp: bool(p.autoExp),
+    fogDensity: num(p.fogDensity, 0), rrOn: bool(p.rrOn), denoiseOn: bool(p.denoiseOn), denIters: num(p.denIters, 3)|0,
+    neeOn: bool(p.neeOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1)
+  };
+}
+function applyPreset(idx){
+  const p = PRESETS[idx]; if(!p) return;
+  const s = presetToParams(p);
+  sceneId=s.sceneId; theta=s.theta; phi=s.phi; radius=s.radius; target=s.target.slice();
+  maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
+  maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
+  denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
+  syncSceneUI(); clearAccum();
+}
 $('scene').onchange = e=>{
   sceneId=+e.target.value;
   if(sceneId===4){ focusDist=3.2; $('focus').value=3.2; $('focusVal').textContent='3.2'; }
@@ -943,6 +980,7 @@ $('sceneFile').onchange = e=>{
   r.readAsText(f); e.target.value = '';
 };
 $('tone').onchange = e=>{ toneMode = +e.target.value; };
+$('preset').onchange = e=>{ applyPreset(+e.target.value); };
 $('autoexp').onchange = e=>{ autoExp = e.target.checked; };
 $('fog').oninput = e=>{ fogDensity = +e.target.value; $('fogVal').textContent = fogDensity.toFixed(2); clearAccum(); };
 $('rr').onchange = e=>{ rrOn = e.target.checked; clearAccum(); };
