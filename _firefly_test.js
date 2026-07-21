@@ -26,7 +26,7 @@ const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 ok('PT shader 声明 uniform float uClamp', /uniform float uClamp;/.test(main));
 ok('radiance 末段钳制 min(L, vec3(uClamp))', /if\(uClamp > 0\.0\) L = min\(L, vec3\(uClamp\)\);/.test(main));
-ok('状态含 clampRad=0', /clampRad=0;/.test(main));
+ok('状态含 clampRad=0', /clampRad=0,/.test(main));
 ok('serializeScene 含 clampRad', /clampRad: s\.clampRad/.test(main));
 ok('deserializeScene 含 clampRad', /clampRad: num\('clampRad', 0\)/.test(main));
 ok('presetToParams 含 clampRad', /clampRad: num\(p\.clampRad, 0\)/.test(main));

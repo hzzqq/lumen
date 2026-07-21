@@ -218,6 +218,31 @@
     </div>
 
     <div class="row">
+      <label>饱和度 Saturation <span class="val" id="satStrVal">1.00</span></label>
+      <input type="range" id="satStr" min="0" max="200" step="1" value="100" />
+    </div>
+
+    <div class="row">
+      <label>对比度 Contrast <span class="val" id="contrastVal">1.00</span></label>
+      <input type="range" id="contrast" min="0" max="200" step="1" value="100" />
+    </div>
+
+    <div class="row">
+      <label>锐化 Sharpen <span class="val" id="sharpenVal">0.00</span></label>
+      <input type="range" id="sharpen" min="0" max="200" step="1" value="0" />
+    </div>
+
+    <div class="row">
+      <label>抖动 Dither <span class="val" id="ditherVal">0.00</span></label>
+      <input type="range" id="dither" min="0" max="200" step="1" value="0" />
+    </div>
+
+    <div class="row">
+      <label>色温 Temp <span class="val" id="tempVal">0.00</span></label>
+      <input type="range" id="temp" min="-100" max="100" step="1" value="0" />
+    </div>
+
+    <div class="row">
       <label>导入模型（OBJ / glTF）</label>
       <input type="file" id="modelFile" accept=".obj,.gltf" />
     </div>
