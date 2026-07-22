@@ -32,7 +32,7 @@ for(const p of PRESETS){
 // ---- presetToParams 归一化（类型守卫）----
 {
   const s = presetToParams(PRESETS[1]); // 电影感夜景
-  ok('presetToParams 返回 41 字段（含太阳/金属粗糙度/黄金比/雾颜色/FOV/背景渐变/调试视图/萤火虫钳制/饱和度/对比度/锐化/抖动/色温）', Object.keys(s).length === 41);
+  ok('presetToParams 返回 46 字段（含太阳/金属粗糙度/黄金比/雾颜色/FOV/背景渐变/调试视图/萤火虫钳制/饱和度/对比度/锐化/抖动/色温/色相/复古褐调/色调分层/电影黑边/CRT扫描线）', Object.keys(s).length === 46);
   ok('toneMode 取整为 3', s.toneMode === 3);
   ok('target 归一为数字数组', Array.isArray(s.target) && s.target.every(Number.isFinite));
   ok('bloomOn 布尔化 true', s.bloomOn === true);

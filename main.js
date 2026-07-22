@@ -482,6 +482,11 @@ uniform float uContrast;   // 对比度(1=原图, >1 增对比, <1 减对比)
 uniform float uSharpen;    // 锐化(非锐化掩膜: 中心减 4 邻域均值再叠加, 0=关闭, >0 增强边缘)
 uniform float uDither;     // 有序抖动(4x4 Bayer): 向颜色注入半阶量化噪声打散渐变条带, 0=关闭
 uniform float uTemp;       // 色温/白平衡(0=原色, >0 偏暖增红减蓝, <0 偏冷增蓝减红)
+uniform float uHue;       // 色相旋转(度, -180..180, 0=原色, 围绕 H 轴旋转整体色相)
+uniform float uSepia;      // 复古褐调强度(0=原色, 1=满褐, 经典 sepia 矩阵混合)
+uniform float uPosterize;  // 色调分层(色阶)级别数(0/1=关闭, >=2 时把每通道量化为 N 级)
+uniform float uLetterbox; // 电影黑边：每条黑边占画面高度的比例(0=关闭, 0.1=上下各 10% 黑边)
+uniform float uScanline; // CRT 扫描线强度(0=关闭, 1=最深；模拟老式显像管横向暗线)
 vec3 aces(vec3 x){
   float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
   return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
@@ -558,6 +563,25 @@ float vignette(vec2 uv, float str){
 }
 // 胶片噪点：每像素基于 uv 与帧号的高频伪随机扰动，模拟胶片颗粒(逐帧变化 → 动态噪点)
 float hash21(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+// 色相旋转(Hue Shift)：RGB↔HSV 互转后平移 H 分量(度)，整体换色而不改变明度/饱和度
+vec3 rgb2hsv(vec3 c){
+  vec4 K = vec4(0.0, -1.0/3.0, 2.0/3.0, -1.0);
+  vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+  vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+  float d = q.x - min(q.w, q.y);
+  float e = 1.0e-10;
+  return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+}
+vec3 hsv2rgb(vec3 c){
+  vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+  vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+  return c.z * mix(vec3(1.0), clamp(p - K.xxx, 0.0, 1.0), c.y);
+}
+vec3 hueShift(vec3 c, float deg){
+  vec3 hsv = rgb2hsv(clamp(c, 0.0, 1.0));
+  hsv.x = fract(hsv.x + deg / 360.0);
+  return clamp(hsv2rgb(hsv), 0.0, 1.0);
+}
 void main(){
   vec2 texel = 1.0 / uTexSize;
   vec3 cHDR = sampleHDR(vUv);
@@ -585,6 +609,17 @@ void main(){
     c.r = clamp(c.r * (1.0 + 0.15 * uTemp), 0.0, 1.0);
     c.b = clamp(c.b * (1.0 - 0.15 * uTemp), 0.0, 1.0);
   }
+  if(uHue != 0.0){ c = hueShift(c, uHue); }             // 色相旋转：围绕 H 轴(度) 整体换色
+  if(uSepia > 0.0){                                      // 复古褐调：经典 sepia 矩阵，按强度混合
+    vec3 sep = vec3(dot(c, vec3(0.393, 0.769, 0.189)),
+                    dot(c, vec3(0.349, 0.686, 0.168)),
+                    dot(c, vec3(0.272, 0.534, 0.131)));
+    c = clamp(mix(c, sep, uSepia), 0.0, 1.0);
+  }
+  if(uPosterize >= 2.0){                                // 色调分层：把每通道量化为 N 个离散色阶(漫画/复古点彩风)
+    float inv = 1.0 / (uPosterize - 1.0);
+    c = clamp(floor(c * uPosterize) * inv, 0.0, 1.0);
+  }
   c = pow(c, vec3(1.0 / uGamma));                       // 可调 gamma 显示校正
   if(uVignette == 1){ c *= vignette(vUv, uVigStr); }   // 暗角：边缘压暗
   if(uSatStr != 1.0){                                     // 饱和度：对灰度插值(uSatStr=1 恒等)
@@ -608,6 +643,15 @@ void main(){
   if(uGrain == 1){                                          // 胶片噪点：叠加高频随机颗粒(在暗角之后, 最终合成)
     float n = (hash21(vUv * (uFrame + 1.0) * 60.0) - 0.5) * uGrainStr;
     c = clamp(c + vec3(n), 0.0, 1.0);
+  }
+  if(uScanline > 0.0){                                     // CRT 扫描线：按画面纵向周期压暗，模拟老式显像管
+    float lines = 320.0;                                   // 固定扫描线密度(约 160 条暗线)
+    float s = 0.5 + 0.5 * sin(vUv.y * lines * 3.141592653589793);
+    c *= mix(1.0, s, uScanline);                          // strength=1 时扫描线最深(暗线处亮度*(1-str))
+  }
+  if(uLetterbox > 0.0){                                    // 电影黑边：上下各按高度比例压黑(在最终合成阶段, 保证纯黑)
+    float hb = clamp(uLetterbox, 0.0, 0.5);
+    if(vUv.y < hb || vUv.y > 1.0 - hb) c = vec3(0.0);
   }
   outColor = vec4(c,1.0);
 }`;
@@ -945,7 +989,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0;
 // ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
 // 纯函数：不依赖 THREE，便于 Node 测试与复用。
 function serializeScene(s){
@@ -961,7 +1005,7 @@ function serializeScene(s){
     bloomOn: s.bloomOn, bloomStr: s.bloomStr, bloomThr: s.bloomThr, vignetteOn: s.vignetteOn, vigStr: s.vigStr,
     chromaOn: s.chromaOn, chromaStr: s.chromaStr,
     grainOn: s.grainOn, grainStr: s.grainStr,
-    gamma: s.gamma, clampRad: s.clampRad, satStr: s.satStr, contrast: s.contrast, sharpen: s.sharpen, dither: s.dither, temp: s.temp
+    gamma: s.gamma, clampRad: s.clampRad, satStr: s.satStr, contrast: s.contrast, sharpen: s.sharpen, dither: s.dither, temp: s.temp, hue: s.hue, sepia: s.sepia, posterize: s.posterize, letterbox: s.letterbox, scanline: s.scanline
   };
 }
 function deserializeScene(d){
@@ -985,7 +1029,7 @@ function deserializeScene(d){
     vignetteOn: bool('vignetteOn', false), vigStr: num('vigStr', 0.5),
     chromaOn: bool('chromaOn', false), chromaStr: num('chromaStr', 0.5),
     grainOn: bool('grainOn', false), grainStr: num('grainStr', 0.08),
-    gamma: num('gamma', 2.2), clampRad: num('clampRad', 0), satStr: num('satStr', 1), contrast: num('contrast', 1), sharpen: num('sharpen', 0), dither: num('dither', 0), temp: num('temp', 0)
+    gamma: num('gamma', 2.2), clampRad: num('clampRad', 0), satStr: num('satStr', 1), contrast: num('contrast', 1), sharpen: num('sharpen', 0), dither: num('dither', 0), temp: num('temp', 0), hue: num('hue', 0), sepia: num('sepia', 0), posterize: num('posterize', 0), letterbox: num('letterbox', 0), scanline: num('scanline', 0)
   };
 }
 let avgBuf=null;
@@ -1026,7 +1070,7 @@ function presetToParams(p){
     fogDensity: num(p.fogDensity, 0), rrOn: bool(p.rrOn), denoiseOn: bool(p.denoiseOn), denIters: num(p.denIters, 3)|0,
     neeOn: bool(p.neeOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1),
     vignetteOn: bool(p.vignetteOn), vigStr: num(p.vigStr, 0.5),
-    gamma: num(p.gamma, 2.2), clampRad: num(p.clampRad, 0), satStr: num(p.satStr, 1), contrast: num(p.contrast, 1), sharpen: num(p.sharpen, 0), dither: num(p.dither, 0), temp: num(p.temp, 0)
+    gamma: num(p.gamma, 2.2), clampRad: num(p.clampRad, 0), satStr: num(p.satStr, 1), contrast: num(p.contrast, 1), sharpen: num(p.sharpen, 0), dither: num(p.dither, 0), temp: num(p.temp, 0), hue: num(p.hue, 0), sepia: num(p.sepia, 0), posterize: num(p.posterize, 0), letterbox: num(p.letterbox, 0), scanline: num(p.scanline, 0)
   };
 }
 function applyPreset(idx){
@@ -1037,7 +1081,7 @@ function applyPreset(idx){
   sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
   maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
   denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
-  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma; clampRad=s.clampRad; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp;
+  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma; clampRad=s.clampRad; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline;
   syncSceneUI(); clearAccum();
 }
 $('scene').onchange = e=>{
@@ -1102,6 +1146,11 @@ function syncSceneUI(){
   if($('sharpen')) $('sharpen').value = Math.round(sharpen * 100);
   if($('dither')) $('dither').value = Math.round(dither * 100);
   if($('temp')) $('temp').value = Math.round(temp * 100);
+  if($('hue')) $('hue').value = Math.round(hue);
+  if($('sepia')) $('sepia').value = Math.round(sepia * 100);
+  if($('posterize')) $('posterize').value = posterize;
+  if($('letterbox')) $('letterbox').value = Math.round(letterbox * 100);
+  if($('scanline')) $('scanline').value = Math.round(scanline * 100);
   if($('ap')) $('ap').value = Math.round(aperture * 100);
   if($('sunAz')){ $('sunAz').value = Math.round(sunAz); if($('sunAzVal')) $('sunAzVal').textContent=Math.round(sunAz); }
   if($('sunEl')){ $('sunEl').value = Math.round(sunEl); if($('sunElVal')) $('sunElVal').textContent=Math.round(sunEl); }
@@ -1114,7 +1163,7 @@ function syncSceneUI(){
 }
 $('exportScene').onclick = ()=>{
   const s = serializeScene({ sceneId, theta, phi, radius, target, maxBounces, resScale, exposure,
-    focusDist, aperture, maxSamples, sunAz, sunEl, sunInt, rough, jitter, fogColor, fov, bgTop, bgBottom, debugMode, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, chromaOn, chromaStr, grainOn, grainStr, gamma, clampRad, satStr, contrast, sharpen, dither, temp });
+    focusDist, aperture, maxSamples, sunAz, sunEl, sunInt, rough, jitter, fogColor, fov, bgTop, bgBottom, debugMode, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, chromaOn, chromaStr, grainOn, grainStr, gamma, clampRad, satStr, contrast, sharpen, dither, temp, hue, sepia, posterize, letterbox, scanline });
   downloadBlob('lumen_scene.json', new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' }));
 };
 $('importScene').onclick = ()=> $('sceneFile').click();
@@ -1129,7 +1178,7 @@ $('sceneFile').onchange = e=>{
       sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
       maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
       denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
-      vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp;
+      vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline;
       syncSceneUI(); clearAccum();
     }catch(err){ /* 解析失败静默忽略 */ }
   };
@@ -1164,6 +1213,11 @@ $('contrast').oninput = e=>{ contrast=+e.target.value/100; $('contrastVal').text
 $('sharpen').oninput = e=>{ sharpen=+e.target.value/100; $('sharpenVal').textContent=sharpen.toFixed(2); };
 $('dither').oninput = e=>{ dither=+e.target.value/100; $('ditherVal').textContent=dither.toFixed(2); };
 $('temp').oninput = e=>{ temp=+e.target.value/100; $('tempVal').textContent=temp.toFixed(2); };
+$('hue').oninput = e=>{ hue=+e.target.value; $('hueVal').textContent=hue.toFixed(0); };
+$('sepia').oninput = e=>{ sepia=+e.target.value/100; $('sepiaVal').textContent=sepia.toFixed(2); };
+$('posterize').oninput = e=>{ posterize=+e.target.value; $('posterizeVal').textContent = (posterize >= 2 ? posterize + ' 级' : '关'); };
+$('letterbox').oninput = e=>{ letterbox=+e.target.value/100; $('letterboxVal').textContent=letterbox.toFixed(2); };
+$('scanline').oninput = e=>{ scanline=+e.target.value/100; $('scanlineVal').textContent=scanline.toFixed(2); };
 // 导入外部模型：OBJ / glTF（最简解析），替换当前网格并重建 BVH
 $('modelFile').addEventListener('change', e=>{
   const file = e.target.files && e.target.files[0]; if(!file) return;
@@ -1288,6 +1342,11 @@ function loop(){
   gl.uniform1f(u(showProg,'uSharpen'), sharpen);
   gl.uniform1f(u(showProg,'uDither'), dither);
   gl.uniform1f(u(showProg,'uTemp'), temp);
+  gl.uniform1f(u(showProg,'uHue'), hue);
+  gl.uniform1f(u(showProg,'uSepia'), sepia);
+  gl.uniform1f(u(showProg,'uPosterize'), posterize);
+  gl.uniform1f(u(showProg,'uLetterbox'), letterbox);
+  gl.uniform1f(u(showProg,'uScanline'), scanline);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   frame++;

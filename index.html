@@ -243,6 +243,28 @@
     </div>
 
     <div class="row">
+      <label>色相 Hue <span class="val" id="hueVal">0</span></label>
+      <input type="range" id="hue" min="-180" max="180" step="1" value="0" />
+    </div>
+
+    <div class="row">
+      <label>复古褐调 Sepia <span class="val" id="sepiaVal">0.00</span></label>
+      <input type="range" id="sepia" min="0" max="100" step="1" value="0" />
+    </div>
+    <div class="row">
+      <label>色调分层 Posterize <span class="val" id="posterizeVal">关</span></label>
+      <input type="range" id="posterize" min="0" max="8" step="1" value="0" />
+    </div>
+    <div class="row">
+      <label>电影黑边 Letterbox <span class="val" id="letterboxVal">0.00</span></label>
+      <input type="range" id="letterbox" min="0" max="50" step="1" value="0" />
+    </div>
+    <div class="row">
+      <label>CRT 扫描线 Scanline <span class="val" id="scanlineVal">0.00</span></label>
+      <input type="range" id="scanline" min="0" max="100" step="1" value="0" />
+    </div>
+
+    <div class="row">
       <label>导入模型（OBJ / glTF）</label>
       <input type="file" id="modelFile" accept=".obj,.gltf" />
     </div>
