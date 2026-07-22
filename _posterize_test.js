@@ -63,7 +63,7 @@ const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 ok(/uniform float uPosterize;/.test(main), 'main.js 声明 uPosterize uniform');
 ok(/uPosterize >= 2\.0/.test(main) && /floor\(c \* uPosterize\)/.test(main) && /clamp\(floor\(c \* uPosterize\)/.test(main), 'SHOW_FRAG 实施色阶量化(阈值>=2, 钳制[0,1])');
-ok(/, sepia=0, posterize=0;/.test(main), 'state 默认 posterize=0');
+ok(/, sepia=0, posterize=0[,;]/.test(main), 'state 默认 posterize=0');
 ok(/, posterize: s\.posterize/.test(main), 'serializeScene 含 posterize');
 ok(/posterize: num\('posterize', 0\)/.test(main), 'deserializeScene 读 posterize');
 ok(/sepia: num\(p\.sepia, 0\), posterize: num\(p\.posterize, 0\)/.test(main), 'presetToParams 读 posterize');

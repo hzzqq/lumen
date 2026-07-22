@@ -82,7 +82,7 @@ npm test
 # _model_test.js     (12/12) OBJ 解析三角化：单元三角 / 四边形扇化 / v/vt/vn 记法
 # _scene_test.js     (14/14) 场景预设 JSON：纯数据 / 字段全往返 / 类型守卫
 # _tonemap_test.js   (20/20) 色调映射数学：ACES/Reinhard/Uncharted2/Linear 单调/有界/渐近/接线
-# _presets_test.js   (50/50) 场景预设画廊：5 套配置结构 / 归一化 / 序列化往返 / UI 接线 / 字段计数(36)
+# _presets_test.js   (50/50) 场景预设画廊：5 套配置结构 / 归一化 / 序列化往返 / UI 接线 / 字段计数(65)
 # _sun_test.js      (20/20) 太阳方向/强度：方位角/高度角→单位向量 / 强度缩放 / 序列化
 # _rough_test.js     (20/20) 金属粗糙度：lobe 扰动幅度 / 单位向量 / 平面性 / 接线
 # _jitter_test.js   (277/277) 黄金比 R2 序列：低差异/像素内偏移/强度缩放/确定性 + 接线
@@ -91,7 +91,10 @@ npm test
 # _bggradient_test.js (19/19) 背景渐变：bgTop/bgBottom 双色天穹 / 切换 / 序列化
 # _debug_test.js    (22/22) 调试可视化：albedo/normal/depth 模式 / uDebug 接线
 # _firefly_test.js  (16/16) 高光钳制：uClamp min(L,uClamp) / 滑块 / 序列化
-# 合计 41 套、957 项全通过
+# _crossprocess_test.js (18/18) 交叉冲印：阴影染冷/高光染暖 / 强度线性 / 接线
+# _falsecolor_test.js (18/18) 伪彩映射：ironbow 热成像 / 亮度分层 / 接线
+# _gradientmap_test.js (21/21) 渐变映射：日落渐变(深蓝→绯红→金黄) / 强度 mix / 接线
+# 合计 49 套、1089 项全通过
 ```
 
 ## 📄 许可

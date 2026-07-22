@@ -47,7 +47,7 @@ const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 ok(/uniform float uLetterbox;/.test(main), 'main.js 声明 uLetterbox uniform');
 ok(/uLetterbox > 0\.0/.test(main) && /vUv\.y < hb \|\| vUv\.y > 1\.0 - hb/.test(main), 'SHOW_FRAG 实施上下黑边判定(vUv.y)');
-ok(/, posterize=0, letterbox=0(, scanline=0)?;/.test(main), 'state 默认 letterbox=0');
+ok(/, posterize=0, letterbox=0(, scanline=0)?[,;]/.test(main), 'state 默认 letterbox=0');
 ok(/, letterbox: s\.letterbox/.test(main), 'serializeScene 含 letterbox');
 ok(/letterbox: num\('letterbox', 0\)/.test(main), 'deserializeScene 读 letterbox');
 ok(/posterize: num\(p\.posterize, 0\), letterbox: num\(p\.letterbox, 0\)/.test(main), 'presetToParams 读 letterbox');
