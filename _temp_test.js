@@ -60,7 +60,7 @@ const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 ok(/uniform float uTemp;/.test(main), 'main.js declares uniform float uTemp');
 ok(/uTemp != 0\.0/.test(main), 'SHOW_FRAG applies uTemp gate');
-ok(/, dither=0, temp=0(, hue=0)?(, sepia=0)?(, posterize=0)?(, letterbox=0)?(, scanline=0)?;/.test(main), 'state default includes temp=0');
+ok(/, dither=0, temp=0(, hue=0)?(, sepia=0)?(, posterize=0)?(, letterbox=0)?(, scanline=0)?(, invert=0)?(, border=0)?(, bright=0)?[,;]/.test(main), 'state default includes temp=0');
 ok(/dither: s\.dither, temp: s\.temp/.test(main), 'serializeScene includes temp');
 ok(/dither: num\('dither', 0\), temp: num\('temp', 0\)/.test(main), 'deserializeScene reads temp');
 ok(/temp: num\(p\.temp, 0\)/.test(main), 'presetToParams reads temp');

@@ -91,7 +91,7 @@ npm test
 # _bggradient_test.js (19/19) 背景渐变：bgTop/bgBottom 双色天穹 / 切换 / 序列化
 # _debug_test.js    (22/22) 调试可视化：albedo/normal/depth 模式 / uDebug 接线
 # _firefly_test.js  (16/16) 高光钳制：uClamp min(L,uClamp) / 滑块 / 序列化
-# 合计 20 套、607 项全通过
+# 合计 41 套、957 项全通过
 ```
 
 ## 📄 许可

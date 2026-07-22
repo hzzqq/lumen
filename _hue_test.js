@@ -53,7 +53,7 @@ ok('GLSL 含 hueShift 辅助函数', main.includes('vec3 hueShift(vec3 c, float 
 ok('main 应用 if(uHue != 0.0) c = hueShift', main.includes('if(uHue != 0.0){ c = hueShift(c, uHue); }'));
 
 // ---- 接线：JS 状态/序列化/预设/UI/绑定 ----
-ok('state 初始化含 hue=0', /temp=0, hue=0(, sepia=0)?(, posterize=0)?(, letterbox=0)?(, scanline=0)?;/.test(main));
+ok('state 初始化含 hue=0', /temp=0, hue=0(, sepia=0)?(, posterize=0)?(, letterbox=0)?(, scanline=0)?(, invert=0)?(, border=0)?(, bright=0)?[,;]/.test(main));
 ok('serializeScene 含 hue: s.hue', main.includes('temp: s.temp, hue: s.hue'));
 ok('deserializeScene 含 num(hue,0)', main.includes("temp: num('temp', 0), hue: num('hue', 0)"));
 ok('presetToParams 含 num(p.hue,0)', main.includes("temp: num(p.temp, 0), hue: num(p.hue, 0)"));

@@ -51,7 +51,7 @@ const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 ok('GLSL 声明 uniform float uScanline', /uniform float uScanline;/.test(main));
 ok('GLSL 链路含 uScanline>0 分支', /if\(uScanline > 0\.0\)/.test(main));
 ok('GLSL 使用 mix(1.0, s, uScanline)', /mix\(1\.0, s, uScanline\)/.test(main));
-ok('state 默认含 scanline=0', /scanline=0;/.test(main));
+ok('state 默认含 scanline=0', /scanline=0[,;]/.test(main));
 ok('serialize 含 scanline: s.scanline', /scanline: s\.scanline/.test(main));
 ok('deserialize 含 scanline: num', /scanline: num\('scanline', 0\)/.test(main));
 ok('presetToParams 含 scanline', /scanline: num\(p\.scanline, 0\)/.test(main));

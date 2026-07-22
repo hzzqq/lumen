@@ -487,6 +487,17 @@ uniform float uSepia;      // 复古褐调强度(0=原色, 1=满褐, 经典 sepi
 uniform float uPosterize;  // 色调分层(色阶)级别数(0/1=关闭, >=2 时把每通道量化为 N 级)
 uniform float uLetterbox; // 电影黑边：每条黑边占画面高度的比例(0=关闭, 0.1=上下各 10% 黑边)
 uniform float uScanline; // CRT 扫描线强度(0=关闭, 1=最深；模拟老式显像管横向暗线)
+uniform float uInvert;   // 反相/负片强度(0=原色, 1=完全反相, 经典暗房负片效果)
+uniform float uBorder;   // 画面边框强度(0=无边框, 1=最厚相框, 四周压黑形成画框效果)
+uniform float uBright;   // 亮度增益(0=不变, 1=最亮×2)：c *= (1+uBright) 并钳制到 [0,1]
+uniform float uDuotone;  // 双色调：按亮度在暗部色↔高光色间映射(0=原色, 1=完全双色调)
+uniform float uVibrance; // 自然饱和度：低饱和像素提拉更多，高饱和几乎不变(0=关闭, 1=最强)
+uniform float uMono;     // 去色/灰度：按 Rec.709 亮度将颜色混入灰度(0=原色, 1=纯灰度)
+uniform float uTint;      // 色调染色：按暖色 tint 乘以(0=无, 1=强染色)
+uniform float uBalance;    // 色彩平衡：滑块 0~1 映射 b=2t-1，>0 偏暖(红增蓝减)、<0 偏冷(红减蓝增)
+uniform float uBleach;     // 漂白旁路(bleach-bypass)：将颜色向半去饱和的亮度混合，电影银盐质感
+uniform float uFade;       // 褪色(faded)：轻微去饱和 + 抬高黑位，复古胶片质感
+uniform float uSplitTone;   // 分离色调(split-tone)：阴影染冷(青)、高光染暖(橙)
 vec3 aces(vec3 x){
   float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
   return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
@@ -648,6 +659,59 @@ void main(){
     float lines = 320.0;                                   // 固定扫描线密度(约 160 条暗线)
     float s = 0.5 + 0.5 * sin(vUv.y * lines * 3.141592653589793);
     c *= mix(1.0, s, uScanline);                          // strength=1 时扫描线最深(暗线处亮度*(1-str))
+  }
+  if(uInvert > 0.0){ c = mix(c, vec3(1.0) - c, uInvert); }   // 反相/负片：围绕中灰反转亮度与色彩(经典暗房负片效果)
+  if(uBorder > 0.0){                                       // 画面边框：四周压黑形成相框效果(暗角式矩形边框)
+    vec2 d = min(vUv, 1.0 - vUv);                          // 到最近边的距离(0..0.5)
+    float edge = uBorder * 0.35;                           // 边框厚度(占半幅比例)
+    float bx = smoothstep(edge, edge * 0.5, d.x);
+    float by = smoothstep(edge, edge * 0.5, d.y);
+    float b = clamp(bx + by, 0.0, 1.0);
+    c = mix(c, vec3(0.0), b * uBorder);
+  }
+  if(uBright > 0.0){ c = clamp(c * (1.0 + uBright), 0.0, 1.0); }   // 亮度增益：整体提亮(暗部与亮部同比例放大并钳制)
+  if(uDuotone > 0.0){                                     // 双色调：按亮度在暗部色↔高光色间插值(0=原色, 1=完全双色调)
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    vec3 dt = clamp(mix(vec3(0.05, 0.0, 0.1), vec3(1.0, 0.9, 0.7), l), 0.0, 1.0);
+    c = mix(c, dt, uDuotone);
+  }
+  if(uVibrance > 0.0){                                     // 自然饱和度：低饱和像素提拉更多，高饱和几乎不变
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    float mx = max(c.r, max(c.g, c.b));
+    float mn = min(c.r, min(c.g, c.b));
+    float sat = mx - mn;
+    float boost = 1.0 + uVibrance * (1.0 - sat);
+    c = clamp(vec3(l) + (c - vec3(l)) * boost, 0.0, 1.0);
+  }
+  if(uMono > 0.0){                                         // 去色/灰度：按 Rec.709 亮度混入灰度
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = mix(c, vec3(l), uMono);
+  }
+  if(uTint > 0.0){                                         // 色调染色：按暖色 tint 乘以
+    vec3 tintCol = vec3(1.05, 0.85, 0.60);
+    c = clamp(c * mix(vec3(1.0), tintCol, uTint), 0.0, 1.0);
+  }
+  if(uBalance > 0.0){                                       // 色彩平衡：b=2t-1，暖/冷双向
+    float b = uBalance * 2.0 - 1.0;
+    c.r = clamp(c.r + 0.15 * b, 0.0, 1.0);
+    c.b = clamp(c.b - 0.15 * b, 0.0, 1.0);
+  }
+  if(uBleach > 0.0){                                        // 漂白旁路：向半去饱和亮度混合
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    vec3 bch = mix(c, vec3(l), 0.5);
+    c = mix(c, bch, uBleach);
+  }
+  if(uFade > 0.0){                                          // 褪色：轻微去饱和 + 抬高黑位
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    c = mix(c, vec3(l), 0.35 * uFade);
+    c = mix(c, vec3(0.92, 0.90, 0.86), 0.30 * uFade);
+  }
+  if(uSplitTone > 0.0){                                     // 分离色调：阴影染冷(青)、高光染暖(橙)，按亮度插值
+    float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    vec3 shadowTint = vec3(0.90, 0.95, 1.10);
+    vec3 highTint   = vec3(1.10, 0.95, 0.85);
+    vec3 tint = mix(shadowTint, highTint, clamp(l, 0.0, 1.0));
+    c = clamp(mix(c, c * tint, uSplitTone), 0.0, 1.0);
   }
   if(uLetterbox > 0.0){                                    // 电影黑边：上下各按高度比例压黑(在最终合成阶段, 保证纯黑)
     float hb = clamp(uLetterbox, 0.0, 0.5);
@@ -989,7 +1053,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0, invert=0, border=0, bright=0, duotone=0, vibrance=0, mono=0, tint=0, balance=0, bleach=0, fade=0, splittone=0;
 // ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
 // 纯函数：不依赖 THREE，便于 Node 测试与复用。
 function serializeScene(s){
@@ -1005,7 +1069,7 @@ function serializeScene(s){
     bloomOn: s.bloomOn, bloomStr: s.bloomStr, bloomThr: s.bloomThr, vignetteOn: s.vignetteOn, vigStr: s.vigStr,
     chromaOn: s.chromaOn, chromaStr: s.chromaStr,
     grainOn: s.grainOn, grainStr: s.grainStr,
-    gamma: s.gamma, clampRad: s.clampRad, satStr: s.satStr, contrast: s.contrast, sharpen: s.sharpen, dither: s.dither, temp: s.temp, hue: s.hue, sepia: s.sepia, posterize: s.posterize, letterbox: s.letterbox, scanline: s.scanline
+    gamma: s.gamma, clampRad: s.clampRad, satStr: s.satStr, contrast: s.contrast, sharpen: s.sharpen, dither: s.dither, temp: s.temp, hue: s.hue, sepia: s.sepia, posterize: s.posterize, letterbox: s.letterbox, scanline: s.scanline, invert: s.invert, border: s.border, bright: s.bright, duotone: s.duotone
   };
 }
 function deserializeScene(d){
@@ -1029,7 +1093,7 @@ function deserializeScene(d){
     vignetteOn: bool('vignetteOn', false), vigStr: num('vigStr', 0.5),
     chromaOn: bool('chromaOn', false), chromaStr: num('chromaStr', 0.5),
     grainOn: bool('grainOn', false), grainStr: num('grainStr', 0.08),
-    gamma: num('gamma', 2.2), clampRad: num('clampRad', 0), satStr: num('satStr', 1), contrast: num('contrast', 1), sharpen: num('sharpen', 0), dither: num('dither', 0), temp: num('temp', 0), hue: num('hue', 0), sepia: num('sepia', 0), posterize: num('posterize', 0), letterbox: num('letterbox', 0), scanline: num('scanline', 0)
+    gamma: num('gamma', 2.2), clampRad: num('clampRad', 0), satStr: num('satStr', 1), contrast: num('contrast', 1), sharpen: num('sharpen', 0), dither: num('dither', 0), temp: num('temp', 0), hue: num('hue', 0), sepia: num('sepia', 0), posterize: num('posterize', 0), letterbox: num('letterbox', 0), scanline: num('scanline', 0), invert: num('invert', 0), border: num('border', 0), bright: num('bright', 0), duotone: num('duotone', 0), vibrance: num('vibrance', 0), mono: num('mono', 0), tint: num('tint', 0), balance: num('balance', 0), bleach: num('bleach', 0), fade: num('fade', 0), splittone: num('splittone', 0)
   };
 }
 let avgBuf=null;
@@ -1070,7 +1134,7 @@ function presetToParams(p){
     fogDensity: num(p.fogDensity, 0), rrOn: bool(p.rrOn), denoiseOn: bool(p.denoiseOn), denIters: num(p.denIters, 3)|0,
     neeOn: bool(p.neeOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1),
     vignetteOn: bool(p.vignetteOn), vigStr: num(p.vigStr, 0.5),
-    gamma: num(p.gamma, 2.2), clampRad: num(p.clampRad, 0), satStr: num(p.satStr, 1), contrast: num(p.contrast, 1), sharpen: num(p.sharpen, 0), dither: num(p.dither, 0), temp: num(p.temp, 0), hue: num(p.hue, 0), sepia: num(p.sepia, 0), posterize: num(p.posterize, 0), letterbox: num(p.letterbox, 0), scanline: num(p.scanline, 0)
+    gamma: num(p.gamma, 2.2), clampRad: num(p.clampRad, 0), satStr: num(p.satStr, 1), contrast: num(p.contrast, 1), sharpen: num(p.sharpen, 0), dither: num(p.dither, 0), temp: num(p.temp, 0), hue: num(p.hue, 0), sepia: num(p.sepia, 0), posterize: num(p.posterize, 0), letterbox: num(p.letterbox, 0), scanline: num(p.scanline, 0), invert: num(p.invert, 0), border: num(p.border, 0), bright: num(p.bright, 0), duotone: num(p.duotone, 0), vibrance: num(p.vibrance, 0), mono: num(p.mono, 0), tint: num(p.tint, 0), balance: num(p.balance, 0), bleach: num(p.bleach, 0), fade: num(p.fade, 0), splittone: num(p.splittone, 0)
   };
 }
 function applyPreset(idx){
@@ -1081,7 +1145,7 @@ function applyPreset(idx){
   sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
   maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
   denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
-  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma; clampRad=s.clampRad; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline;
+  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma; clampRad=s.clampRad; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline; invert=s.invert; border=s.border; bright=s.bright; duotone=s.duotone; vibrance=s.vibrance; mono=s.mono; tint=s.tint; balance=s.balance; bleach=s.bleach; fade=s.fade; splittone=s.splittone;
   syncSceneUI(); clearAccum();
 }
 $('scene').onchange = e=>{
@@ -1151,6 +1215,17 @@ function syncSceneUI(){
   if($('posterize')) $('posterize').value = posterize;
   if($('letterbox')) $('letterbox').value = Math.round(letterbox * 100);
   if($('scanline')) $('scanline').value = Math.round(scanline * 100);
+  if($('invert')) $('invert').value = Math.round(invert * 100);
+  if($('border')) $('border').value = Math.round(border * 100);
+  if($('bright')) $('bright').value = Math.round(bright * 100);
+  if($('duotone')) $('duotone').value = Math.round(duotone * 100);
+  if($('vibrance')) $('vibrance').value = Math.round(vibrance * 100);
+  if($('mono')) $('mono').value = Math.round(mono * 100);
+  if($('tint')) $('tint').value = Math.round(tint * 100);
+  if($('balance')) $('balance').value = Math.round(balance * 100);
+  if($('bleach')) $('bleach').value = Math.round(bleach * 100);
+  if($('fade')) $('fade').value = Math.round(fade * 100);
+  if($('splittone')) $('splittone').value = Math.round(splittone * 100);
   if($('ap')) $('ap').value = Math.round(aperture * 100);
   if($('sunAz')){ $('sunAz').value = Math.round(sunAz); if($('sunAzVal')) $('sunAzVal').textContent=Math.round(sunAz); }
   if($('sunEl')){ $('sunEl').value = Math.round(sunEl); if($('sunElVal')) $('sunElVal').textContent=Math.round(sunEl); }
@@ -1178,7 +1253,7 @@ $('sceneFile').onchange = e=>{
       sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
       maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
       denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
-      vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline;
+      vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline; invert=s.invert; border=s.border; bright=s.bright; duotone=s.duotone; vibrance=s.vibrance; mono=s.mono; tint=s.tint; balance=s.balance; bleach=s.bleach; fade=s.fade; splittone=s.splittone;
       syncSceneUI(); clearAccum();
     }catch(err){ /* 解析失败静默忽略 */ }
   };
@@ -1218,6 +1293,17 @@ $('sepia').oninput = e=>{ sepia=+e.target.value/100; $('sepiaVal').textContent=s
 $('posterize').oninput = e=>{ posterize=+e.target.value; $('posterizeVal').textContent = (posterize >= 2 ? posterize + ' 级' : '关'); };
 $('letterbox').oninput = e=>{ letterbox=+e.target.value/100; $('letterboxVal').textContent=letterbox.toFixed(2); };
 $('scanline').oninput = e=>{ scanline=+e.target.value/100; $('scanlineVal').textContent=scanline.toFixed(2); };
+$('invert').oninput = e=>{ invert=+e.target.value/100; $('invertVal').textContent=invert.toFixed(2); };
+$('border').oninput = e=>{ border=+e.target.value/100; $('borderVal').textContent=border.toFixed(2); };
+$('bright').oninput = e=>{ bright=+e.target.value/100; $('brightVal').textContent=bright.toFixed(2); };
+$('duotone').oninput = e=>{ duotone=+e.target.value/100; $('duotoneVal').textContent=duotone.toFixed(2); };
+$('vibrance').oninput = e=>{ vibrance=+e.target.value/100; $('vibranceVal').textContent=vibrance.toFixed(2); };
+$('mono').oninput = e=>{ mono=+e.target.value/100; $('monoVal').textContent=mono.toFixed(2); };
+$('tint').oninput = e=>{ tint=+e.target.value/100; $('tintVal').textContent=tint.toFixed(2); };
+$('balance').oninput = e=>{ balance=+e.target.value/100; $('balanceVal').textContent=balance.toFixed(2); };
+$('bleach').oninput = e=>{ bleach=+e.target.value/100; $('bleachVal').textContent=bleach.toFixed(2); };
+$('fade').oninput = e=>{ fade=+e.target.value/100; $('fadeVal').textContent=fade.toFixed(2); };
+$('splittone').oninput = e=>{ splittone=+e.target.value/100; $('splittoneVal').textContent=splittone.toFixed(2); };
 // 导入外部模型：OBJ / glTF（最简解析），替换当前网格并重建 BVH
 $('modelFile').addEventListener('change', e=>{
   const file = e.target.files && e.target.files[0]; if(!file) return;
@@ -1347,6 +1433,17 @@ function loop(){
   gl.uniform1f(u(showProg,'uPosterize'), posterize);
   gl.uniform1f(u(showProg,'uLetterbox'), letterbox);
   gl.uniform1f(u(showProg,'uScanline'), scanline);
+  gl.uniform1f(u(showProg,'uInvert'), invert);
+  gl.uniform1f(u(showProg,'uBorder'), border);
+  gl.uniform1f(u(showProg,'uBright'), bright);
+  gl.uniform1f(u(showProg,'uDuotone'), duotone);
+  gl.uniform1f(u(showProg,'uVibrance'), vibrance);
+  gl.uniform1f(u(showProg,'uMono'), mono);
+  gl.uniform1f(u(showProg,'uTint'), tint);
+  gl.uniform1f(u(showProg,'uBalance'), balance);
+  gl.uniform1f(u(showProg,'uBleach'), bleach);
+  gl.uniform1f(u(showProg,'uFade'), fade);
+  gl.uniform1f(u(showProg,'uSplitTone'), splittone);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   frame++;
