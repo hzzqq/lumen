@@ -48,8 +48,8 @@ ok('shader 声明 uniform vec3 uFogColor', /uniform vec3\s+uFogColor;/.test(main
 ok('shader 雾色改用 uFogColor', /fogCol = uFogColor;/.test(main));
 ok('fogColor 进入状态变量', /fogColor=\[0\.8,0\.85,0\.9\]/.test(main));
 ok('serializeScene 含 fogColor', /fogColor: s\.fogColor/.test(main));
-ok('deserializeScene 含 fogColor', /fogColor: \(Array\.isArray\(d\.fogColor\)/.test(main));
-ok('presetToParams 含 fogColor', /fogColor: \(Array\.isArray\(p\.fogColor\)/.test(main));
+ok('deserializeScene 含 fogColor', /fogColor: fin3\(d\.fogColor, \[0\.8,0\.85,0\.9\]\)/.test(main));
+ok('presetToParams 含 fogColor', /fogColor: fin3\(p\.fogColor, \[0\.8,0\.85,0\.9\]\)/.test(main));
 ok('applyPreset/importScene 赋值 fogColor', /fogColor=s\.fogColor \? s\.fogColor\.slice\(\)/.test(main));
 ok('uniform 绑定 uFogColor(vec3)', /uniform3f\(u\(ptProg,'uFogColor'\)/.test(main));
 ok('exportScene 含 fogColor 参数', /rough, jitter, fogColor, fov, bgTop, bgBottom, debugMode, toneMode/.test(main));

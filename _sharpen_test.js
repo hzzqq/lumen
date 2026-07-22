@@ -83,7 +83,7 @@ ok(/sharpen: num\('sharpen', 0\)/.test(main), 'deserializeScene includes sharpen
 ok(/sharpen: num\(p\.sharpen, 0\)/.test(main), 'presetToParams includes sharpen: num(p.sharpen, 0)');
 ok(/sharpen=s\.sharpen;/.test(main), 'applyPreset/importScene assign sharpen=s.sharpen;');
 ok(/gl\.uniform1f\(u\(showProg,'uSharpen'\), sharpen\);/.test(main), 'uniform bind gl.uniform1f(u(showProg,\'uSharpen\'), sharpen)');
-ok(/contrast, sharpen, dither(, temp)?(, hue)?(, sepia)?(, posterize)?(, letterbox)?(, scanline)? \}\);/.test(main), 'exportScene serializes sharpen + dither (+temp +hue +sepia +posterize +letterbox +scanline)');
+ok(/contrast, sharpen, dither(, temp)?(, hue)?(, sepia)?(, posterize)?(, letterbox)?(, scanline)?/.test(main), 'exportScene serializes sharpen + dither (+temp +hue +sepia +posterize +letterbox +scanline)');
 ok(/\$\('sharpen'\)\.oninput/.test(main), 'UI oninput binds sharpen');
 ok(/\$\('sharpen'\)\.value = Math\.round\(sharpen \* 100\)/.test(main), 'syncSceneUI syncs sharpen');
 ok(/id="sharpen"/.test(html), 'index.html has sharpen slider');

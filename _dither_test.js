@@ -79,7 +79,7 @@ ok(/dither: num\('dither', 0\)/.test(main), 'deserializeScene includes dither: n
 ok(/dither: num\(p\.dither, 0\)/.test(main), 'presetToParams includes dither: num(p.dither, 0)');
 ok(/dither=s\.dither;/.test(main), 'applyPreset/importScene assign dither=s.dither;');
 ok(/gl\.uniform1f\(u\(showProg,'uDither'\), dither\);/.test(main), 'uniform bind gl.uniform1f(u(showProg,\'uDither\'), dither)');
-ok(/contrast, sharpen, dither(, temp)?(, hue)?(, sepia)?(, posterize)?(, letterbox)?(, scanline)? \}\);/.test(main), 'exportScene serializes dither (+temp +hue +sepia +posterize +letterbox +scanline)');
+ok(/contrast, sharpen, dither(, temp)?(, hue)?(, sepia)?(, posterize)?(, letterbox)?(, scanline)?/.test(main), 'exportScene serializes dither (+temp +hue +sepia +posterize +letterbox +scanline)');
 ok(/\$\('dither'\)\.oninput/.test(main), 'UI oninput binds dither');
 ok(/\$\('dither'\)\.value = Math\.round\(dither \* 100\)/.test(main), 'syncSceneUI syncs dither');
 ok(/id="dither"/.test(html), 'index.html has dither slider');

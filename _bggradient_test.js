@@ -35,8 +35,8 @@ ok('shader 声明 uBgTop/uBgBottom', /uniform vec3\s+uBgTop;/.test(main) && /uni
 ok('sky 使用 uBgTop/uBgBottom', /vec3 zenith = uBgTop;/.test(main) && /vec3 horizon = uBgBottom;/.test(main));
 ok('状态含 bgTop/bgBottom', /bgTop=\[0\.20,0\.36,0\.66\], bgBottom=\[0\.62,0\.70,0\.80\]/.test(main));
 ok('serializeScene 含 bgTop/bgBottom', /bgTop: s\.bgTop, bgBottom: s\.bgBottom/.test(main));
-ok('deserializeScene 含 bgTop/bgBottom', /bgTop: \(Array\.isArray\(d\.bgTop\)/.test(main) && /bgBottom: \(Array\.isArray\(d\.bgBottom\)/.test(main));
-ok('presetToParams 含 bgTop/bgBottom', /bgTop: \(Array\.isArray\(p\.bgTop\)/.test(main));
+ok('deserializeScene 含 bgTop/bgBottom', /bgTop: fin3\(d\.bgTop, \[0\.20,0\.36,0\.66\]\)/.test(main) && /bgBottom: fin3\(d\.bgBottom, \[0\.62,0\.70,0\.80\]\)/.test(main));
+ok('presetToParams 含 bgTop/bgBottom', /bgTop: fin3\(p\.bgTop, \[0\.20,0\.36,0\.66\]\)/.test(main));
 ok('applyPreset/importScene 赋值', /bgBottom=s\.bgBottom \? s\.bgBottom\.slice\(\)/.test(main));
 ok('uniform 绑定 uBgTop/uBgBottom', /uniform3f\(u\(ptProg,'uBgTop'\)/.test(main) && /uniform3f\(u\(ptProg,'uBgBottom'\)/.test(main));
 ok('exportScene 含 bgTop/bgBottom', /fov, bgTop, bgBottom, debugMode, toneMode/.test(main));

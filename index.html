@@ -55,6 +55,8 @@
         <option value="4">Cornell Box (封闭房间 + 面积光)</option>
         <option value="5">彩球墙 (漫反射阵列 + 面光源)</option>
         <option value="6">玻璃/金属厅 (反射+折射)</option>
+        <option value="7">宇宙星云 (体积星云 + 星场)</option>
+        <option value="8">行星与环 (SDF 圆环 + 行星)</option>
       </select>
     </div>
     <div class="row">
@@ -95,6 +97,7 @@
         <option value="1">Reinhard</option>
         <option value="2">线性 (仅裁剪)</option>
         <option value="3">Uncharted2 (电影级)</option>
+        <option value="4">AgX 电影感</option>
       </select>
     </div>
 
@@ -117,6 +120,10 @@
     <div class="row">
       <label>视野 FOV <span class="val" id="fovVal">50°</span></label>
       <input type="range" id="fov" min="20" max="100" step="1" value="50" />
+    </div>
+    <div class="row">
+      <label>鱼眼 FISHEYE <span class="val" id="fisheyeVal">0.00</span></label>
+      <input type="range" id="fisheye" min="0" max="100" step="1" value="0" />
     </div>
 
     <div class="row">
@@ -339,6 +346,50 @@
       <input type="range" id="pixelate" min="0" max="100" step="1" value="0" />
       <label>RGB 偏移 RGB Shift <span class="val" id="rgbshiftVal">0.00</span></label>
       <input type="range" id="rgbshift" min="0" max="100" step="1" value="0" />
+      <label>半调网点 Halftone <span class="val" id="halftoneVal">0.00</span></label>
+      <input type="range" id="halftone" min="0" max="100" step="1" value="0" />
+      <label>三色染印 Technicolor <span class="val" id="techniVal">0.00</span></label>
+      <input type="range" id="techni" min="0" max="100" step="1" value="0" />
+      <label>VHS 失真 VHS <span class="val" id="vhsVal">0.00</span></label>
+      <input type="range" id="vhs" min="0" max="100" step="1" value="0" />
+      <label>色度键控 Color Key <span class="val" id="colorkeyVal">0.00</span></label>
+      <input type="range" id="colorkey" min="0" max="100" step="1" value="0" />
+      <label>油画 Oil <span class="val" id="oilVal">0.00</span></label>
+      <label>洛摩 Lomo <span class="val" id="lomoVal">0.00</span></label>
+      <input type="range" id="lomo" min="0" max="100" step="1" value="0" />
+      <input type="range" id="oil" min="0" max="100" step="1" value="0" />
+      <label>红蓝立体 Anaglyph <span class="val" id="anaglyphVal">0.00</span></label>
+      <input type="range" id="anaglyph" min="0" max="100" step="1" value="0" />
+      <label>漏光 Light Leak <span class="val" id="leakVal">0.00</span></label>
+      <input type="range" id="leak" min="0" max="100" step="1" value="0" />
+      <label>波形畸变 Wave <span class="val" id="waveVal">0.00</span></label>
+      <input type="range" id="wave" min="0" max="100" step="1" value="0" />
+      <label>彩色噪点 Color Noise <span class="val" id="cnoiseVal">0.00</span></label>
+      <input type="range" id="cnoise" min="0" max="100" step="1" value="0" />
+      <label>万花筒 Kaleidoscope <span class="val" id="kaleidoVal">0.00</span></label>
+      <input type="range" id="kaleido" min="0" max="100" step="1" value="0" />
+      <label>水波纹 Ripple <span class="val" id="rippleVal">0.00</span></label>
+      <input type="range" id="ripple" min="0" max="100" step="1" value="0" />
+      <label>色相分层 Hue Quantize <span class="val" id="huequantVal">0.00</span></label>
+      <input type="range" id="huequant" min="0" max="100" step="1" value="0" />
+      <label>暗部提升 Lift Shadows <span class="val" id="liftVal">0.00</span></label>
+      <input type="range" id="lift" min="0" max="100" step="1" value="0" />
+      <label>高光饱和 Highlight Sat <span class="val" id="hsatVal">0.00</span></label>
+      <input type="range" id="hsat" min="0" max="100" step="1" value="0" />
+    </div>
+
+    <div class="row">
+      <label>故障艺术 Glitch <span class="val" id="glitchVal">0.00</span></label>
+      <input type="range" id="glitch" min="0" max="100" step="1" value="0" />
+    </div>
+
+    <div class="row">
+      <label>解析点光源 Point Light</label>
+      <input type="checkbox" id="pointOn" /> 启用点光源（带阴影 + 反向平方衰减）
+    </div>
+    <div class="row">
+      <label>点光强度 Intensity <span class="val" id="pointIntVal">8.0</span></label>
+      <input type="range" id="pointInt" min="0" max="40" step="1" value="8" />
     </div>
 
     <div class="row">

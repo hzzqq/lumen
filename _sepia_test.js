@@ -66,7 +66,7 @@ ok(/sepia: num\('sepia', 0\)/.test(main), 'deserializeScene reads sepia');
 ok(/temp: num\('temp', 0\), hue: num\('hue', 0\), sepia: num\('sepia', 0\)/.test(main), 'presetToParams reads sepia');
 ok(/temp=s\.temp; hue=s\.hue; sepia=s\.sepia;/.test(main), 'applyPreset + load set sepia');
 ok(/if\(\$\('sepia'\)\) \$\('sepia'\)\.value = Math\.round\(sepia \* 100\);/.test(main), 'syncSceneUI sets sepia slider');
-ok(/dither, temp, hue, sepia(, posterize)?(, letterbox)?(, scanline)? \}\);/.test(main), 'exportScene object includes sepia');
+ok(/dither, temp, hue, sepia(, posterize)?(, letterbox)?(, scanline)?/.test(main), 'exportScene object includes sepia');
 ok(/gl\.uniform1f\(u\(showProg,'uSepia'\), sepia\);/.test(main), 'uniform bind uSepia');
 ok(/\$\('sepia'\)\.oninput/.test(main), 'main.js binds sepia slider');
 ok(/id="sepia"/.test(html) && /id="sepiaVal"/.test(html), 'index.html has sepia slider');

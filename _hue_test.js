@@ -60,7 +60,7 @@ ok('presetToParams 含 num(p.hue,0)', main.includes("temp: num(p.temp, 0), hue: 
 ok('applyPreset 含 hue=s.hue', main.includes('temp=s.temp; hue=s.hue;'));
 ok('loadScene 含 hue=s.hue', main.includes('temp=s.temp; hue=s.hue;'));
 ok('syncSceneUI 同步 #hue', main.includes("if($('hue')) $('hue').value = Math.round(hue);"));
-ok('exportScene 含 hue', /sharpen, dither, temp, hue(, sepia)?(, posterize)?(, letterbox)?(, scanline)? \}\);/.test(main));
+ok('exportScene 含 hue', /sharpen, dither, temp, hue(, sepia)?(, posterize)?(, letterbox)?(, scanline)?/.test(main));
 ok('UI handler 绑定 #hue', main.includes("$('hue').oninput"));
 ok('uniform bind uHue', main.includes("gl.uniform1f(u(showProg,'uHue'), hue);"));
 ok('index.html 含色相 Hue 滑块', html.includes('id="hue"'));

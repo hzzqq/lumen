@@ -66,7 +66,7 @@ ok(/dither: num\('dither', 0\), temp: num\('temp', 0\)/.test(main), 'deserialize
 ok(/temp: num\(p\.temp, 0\)/.test(main), 'presetToParams reads temp');
 ok(/dither=s\.dither; temp=s\.temp;/.test(main), 'applyPreset + load set temp');
 ok(/if\(\$\('temp'\)\) \$\('temp'\)\.value = Math\.round\(temp \* 100\);/.test(main), 'syncSceneUI sets temp slider');
-ok(/dither, temp(, hue)?(, sepia)?(, posterize)?(, letterbox)?(, scanline)? \}\);/.test(main), 'exportScene object includes temp');
+ok(/dither, temp(, hue)?(, sepia)?(, posterize)?(, letterbox)?(, scanline)?/.test(main), 'exportScene object includes temp');
 ok(/gl\.uniform1f\(u\(showProg,'uTemp'\), temp\);/.test(main), 'uniform bind uTemp');
 ok(/\$\('temp'\)\.oninput/.test(main), 'main.js binds temp slider');
 ok(/id="temp"/.test(html) && /id="tempVal"/.test(html), 'index.html has temp slider');

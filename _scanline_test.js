@@ -57,7 +57,7 @@ ok('deserialize 含 scanline: num', /scanline: num\('scanline', 0\)/.test(main))
 ok('presetToParams 含 scanline', /scanline: num\(p\.scanline, 0\)/.test(main));
 ok('applyPreset 含 scanline=s.scanline', /scanline=s\.scanline;/.test(main));
 ok('syncSceneUI 含 scanline 滑块同步', /\$\('scanline'\)\.value = Math\.round\(scanline \* 100\)/.test(main));
-ok('exportScene 含 letterbox, scanline', /letterbox, scanline \}\);/.test(main));
+ok('exportScene 含 letterbox, scanline', /letterbox, scanline/.test(main));
 ok('uniform 绑定 uScanline', /u\(showProg,'uScanline'\)/.test(main));
 ok('UI oninput 接线 scanline', /\$\('scanline'\)\.oninput/.test(main));
 ok('index.html 含 scanline 滑块', /id="scanline"/.test(html));
