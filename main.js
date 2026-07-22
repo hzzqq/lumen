@@ -506,6 +506,15 @@ uniform float uThreshold;  // 阈值二值化(threshold)：按亮度阈值 t 将
 uniform float uCrossprocess; // 交叉冲印(crossprocess)：阴影染冷(蓝升红降)、高光染暖(红绿升蓝降)，模拟胶片误冲
 uniform float uFalsecolor;  // 伪彩映射(falsecolor)：按亮度做热成像伪彩(ironbow)，0=原图 1=全伪彩
 uniform float uGradientmap; // 渐变映射(gradientmap)：按亮度做日落渐变映射(深蓝→绯红→金黄)，0=原图 1=全映射
+uniform float uPastel;     // 粉彩(pastel)：去饱和后向白提亮，营造柔和粉彩/水彩质感，0=原图 1=全粉彩
+uniform float uInfrared;   // 红外假彩(infrared)：按亮度做热成像伪彩映射(黑→紫→红→橙→黄→白)，0=原图 1=全映射
+uniform float uRadial;     // 径向色相(radial)：色相随到画面中心的径向距离旋转，0=原图 1=全旋转
+uniform float uSwirl;      // 漩涡色相(swirl)：色相随半径渐进旋转（漩涡/扭曲感），0=原图 1=全旋转
+uniform float uNight;      // 夜视绿(night)：去色转绿单色 + 轻微提亮/对比，0=原图 1=全夜视
+uniform float uEmboss;     // 浮雕(emboss)：用 dFdx/dFdy 导数做方向性浮雕，0=原图 1=全浮雕
+uniform float uEdge;       // 边缘检测(edge)：用 dFdx/dFdy 计算亮度梯度幅值做边缘，0=原图 1=全边缘
+uniform float uPixelate;   // 像素化(pixelate)：把 UV 量子化到方块，重采样得到马赛克，0=原图 1=全像素化
+uniform float uRgbshift;   // RGB 偏移(rgbshift)：R/B 通道水平错位（色散），0=原图 1=全偏移
 vec3 falseColor(float l){
   l = clamp(l, 0.0, 1.0);
   vec3 c0 = vec3(0.0, 0.0, 0.0);
@@ -525,6 +534,20 @@ vec3 gradientMap(float l){
   vec3 s2 = vec3(0.99, 0.73, 0.18);   // 高光：金黄
   if(l < 0.5) return mix(s0, s1, l / 0.5);
   return mix(s1, s2, (l - 0.5) / 0.5);
+}
+vec3 infraredMap(float l){                             // 热成像伪彩：黑→深紫→红→橙→黄→白
+  l = clamp(l, 0.0, 1.0);
+  vec3 c0 = vec3(0.0, 0.0, 0.0);
+  vec3 c1 = vec3(0.30, 0.0, 0.40);
+  vec3 c2 = vec3(0.85, 0.05, 0.10);
+  vec3 c3 = vec3(1.0, 0.55, 0.0);
+  vec3 c4 = vec3(1.0, 0.95, 0.6);
+  vec3 c5 = vec3(1.0, 1.0, 1.0);
+  if(l < 0.2) return mix(c0, c1, l / 0.2);
+  if(l < 0.4) return mix(c1, c2, (l - 0.2) / 0.2);
+  if(l < 0.6) return mix(c2, c3, (l - 0.4) / 0.2);
+  if(l < 0.8) return mix(c3, c4, (l - 0.6) / 0.2);
+  return mix(c4, c5, (l - 0.8) / 0.2);
 }
 vec3 aces(vec3 x){
   float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
@@ -776,6 +799,60 @@ void main(){
   if(uGradientmap > 0.0){                                  // 渐变映射：亮度→日落渐变(深蓝→绯红→金黄)，按强度 mix 到原图
     float l = dot(c, vec3(0.299, 0.587, 0.114));
     c = mix(c, gradientMap(l), uGradientmap);
+  }
+  if(uPastel > 0.0){                                       // 粉彩：去饱和后向白提亮，营造柔和粉彩质感
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    vec3 desat = mix(c, vec3(l), 0.4);
+    vec3 soft = mix(desat, vec3(1.0), 0.25);
+    c = mix(c, soft, uPastel);
+  }
+  if(uInfrared > 0.0){                                     // 红外假彩：亮度→热成像伪彩(黑→紫→红→橙→黄→白)，按强度 mix 到原图
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    c = mix(c, infraredMap(l), uInfrared);
+  }
+  if(uRadial > 0.0){                                       // 径向色相：色相随到画面中心的径向距离旋转
+    float radius = distance(vUv, vec2(0.5));
+    float deg = radius * 720.0 * uRadial;
+    c = mix(c, hueShift(c, deg), uRadial);
+  }
+  if(uSwirl > 0.0){                                        // 漩涡色相：色相随半径渐进旋转（漩涡/扭曲感）
+    float radius = distance(vUv, vec2(0.5));
+    float deg = pow(radius, 1.5) * 1080.0 * uSwirl;
+    c = mix(c, hueShift(c, deg), uSwirl);
+  }
+  if(uNight > 0.0){                                        // 夜视绿：绿单色 + 轻微提亮/对比
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    vec3 nv = vec3(l * 0.15, l, l * 0.25);
+    nv = clamp(nv * (1.0 + 0.5 * uNight) + 0.02, 0.0, 1.0);
+    c = mix(c, nv, uNight);
+  }
+  if(uEmboss > 0.0){                                       // 浮雕：用 dFdx/dFdy 导数做方向性浮雕
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    float gx = dFdx(l);
+    float gy = dFdy(l);
+    float e = (gx + gy) * uEmboss * 4.0;
+    c = mix(c, clamp(vec3(0.5) + vec3(e), 0.0, 1.0), uEmboss);
+  }
+  if(uEdge > 0.0){                                         // 边缘检测：用 dFdx/dFdy 计算亮度梯度幅值做边缘
+    float l = dot(c, vec3(0.299, 0.587, 0.114));
+    float gx = dFdx(l);
+    float gy = dFdy(l);
+    float mag = sqrt(gx * gx + gy * gy);
+    c = mix(c, vec3(mag * uEdge * 8.0), uEdge);
+  }
+  if(uPixelate > 0.0){                                     // 像素化：把 UV 量子化到方块，重采样得到马赛克
+    float cells = mix(160.0, 8.0, uPixelate);             // uPixelate=1 => 8x8 方块
+    vec2 cell = (floor(vUv * cells) + 0.5) / cells;
+    vec3 src = sampleHDR(cell);
+    vec3 pc = tonemap(src * uExposure, uTone);
+    c = mix(c, pc, uPixelate);
+  }
+  if(uRgbshift > 0.0){                                     // RGB 偏移/色散：R/B 通道水平错位
+    float amt = uRgbshift * 0.05;
+    vec3 r = sampleHDR(vec2(vUv.x - amt, vUv.y));
+    vec3 b = sampleHDR(vec2(vUv.x + amt, vUv.y));
+    vec3 shifted = vec3(r.r, c.g, b.b);
+    c = mix(c, shifted, uRgbshift);
   }
   if(uLetterbox > 0.0){                                    // 电影黑边：上下各按高度比例压黑(在最终合成阶段, 保证纯黑)
     float hb = clamp(uLetterbox, 0.0, 0.5);
@@ -1117,7 +1194,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0, invert=0, border=0, bright=0, duotone=0, vibrance=0, mono=0, tint=0, balance=0, bleach=0, fade=0, splittone=0, highlights=0, glow=0, solarize=0, expose=0, threshold=0, crossprocess=0, falsecolor=0, gradientmap=0;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0, invert=0, border=0, bright=0, duotone=0, vibrance=0, mono=0, tint=0, balance=0, bleach=0, fade=0, splittone=0, highlights=0, glow=0, solarize=0, expose=0, threshold=0, crossprocess=0, falsecolor=0, gradientmap=0, pastel=0, infrared=0, radial=0, swirl=0, night=0, emboss=0, edge=0, pixelate=0, rgbshift=0;
 // ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
 // 纯函数：不依赖 THREE，便于 Node 测试与复用。
 function serializeScene(s){
@@ -1157,7 +1234,7 @@ function deserializeScene(d){
     vignetteOn: bool('vignetteOn', false), vigStr: num('vigStr', 0.5),
     chromaOn: bool('chromaOn', false), chromaStr: num('chromaStr', 0.5),
     grainOn: bool('grainOn', false), grainStr: num('grainStr', 0.08),
-    gamma: num('gamma', 2.2), clampRad: num('clampRad', 0), satStr: num('satStr', 1), contrast: num('contrast', 1), sharpen: num('sharpen', 0), dither: num('dither', 0), temp: num('temp', 0), hue: num('hue', 0), sepia: num('sepia', 0), posterize: num('posterize', 0), letterbox: num('letterbox', 0), scanline: num('scanline', 0), invert: num('invert', 0), border: num('border', 0), bright: num('bright', 0), duotone: num('duotone', 0), vibrance: num('vibrance', 0), mono: num('mono', 0), tint: num('tint', 0), balance: num('balance', 0), bleach: num('bleach', 0), fade: num('fade', 0), splittone: num('splittone', 0), highlights: num('highlights', 0), glow: num('glow', 0), solarize: num('solarize', 0), expose: num('expose', 0), threshold: num('threshold', 0), crossprocess: num('crossprocess', 0), falsecolor: num('falsecolor', 0), gradientmap: num('gradientmap', 0)
+    gamma: num('gamma', 2.2), clampRad: num('clampRad', 0), satStr: num('satStr', 1), contrast: num('contrast', 1), sharpen: num('sharpen', 0), dither: num('dither', 0), temp: num('temp', 0), hue: num('hue', 0), sepia: num('sepia', 0), posterize: num('posterize', 0), letterbox: num('letterbox', 0), scanline: num('scanline', 0), invert: num('invert', 0), border: num('border', 0), bright: num('bright', 0), duotone: num('duotone', 0), vibrance: num('vibrance', 0), mono: num('mono', 0), tint: num('tint', 0), balance: num('balance', 0), bleach: num('bleach', 0), fade: num('fade', 0), splittone: num('splittone', 0), highlights: num('highlights', 0), glow: num('glow', 0), solarize: num('solarize', 0), expose: num('expose', 0), threshold: num('threshold', 0), crossprocess: num('crossprocess', 0), falsecolor: num('falsecolor', 0), gradientmap: num('gradientmap', 0), pastel: num('pastel', 0), infrared: num('infrared', 0), radial: num('radial', 0), swirl: num('swirl', 0), night: num('night', 0), emboss: num('emboss', 0), edge: num('edge', 0), pixelate: num('pixelate', 0), rgbshift: num('rgbshift', 0)
   };
 }
 let avgBuf=null;
@@ -1198,7 +1275,7 @@ function presetToParams(p){
     fogDensity: num(p.fogDensity, 0), rrOn: bool(p.rrOn), denoiseOn: bool(p.denoiseOn), denIters: num(p.denIters, 3)|0,
     neeOn: bool(p.neeOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1),
     vignetteOn: bool(p.vignetteOn), vigStr: num(p.vigStr, 0.5),
-    gamma: num(p.gamma, 2.2), clampRad: num(p.clampRad, 0), satStr: num(p.satStr, 1), contrast: num(p.contrast, 1), sharpen: num(p.sharpen, 0), dither: num(p.dither, 0), temp: num(p.temp, 0), hue: num(p.hue, 0), sepia: num(p.sepia, 0), posterize: num(p.posterize, 0), letterbox: num(p.letterbox, 0), scanline: num(p.scanline, 0), invert: num(p.invert, 0), border: num(p.border, 0), bright: num(p.bright, 0), duotone: num(p.duotone, 0), vibrance: num(p.vibrance, 0), mono: num(p.mono, 0), tint: num(p.tint, 0), balance: num(p.balance, 0), bleach: num(p.bleach, 0), fade: num(p.fade, 0), splittone: num(p.splittone, 0), highlights: num(p.highlights, 0), glow: num(p.glow, 0), solarize: num(p.solarize, 0), expose: num(p.expose, 0), threshold: num(p.threshold, 0), crossprocess: num(p.crossprocess, 0), falsecolor: num(p.falsecolor, 0), gradientmap: num(p.gradientmap, 0)
+    gamma: num(p.gamma, 2.2), clampRad: num(p.clampRad, 0), satStr: num(p.satStr, 1), contrast: num(p.contrast, 1), sharpen: num(p.sharpen, 0), dither: num(p.dither, 0), temp: num(p.temp, 0), hue: num(p.hue, 0), sepia: num(p.sepia, 0), posterize: num(p.posterize, 0), letterbox: num(p.letterbox, 0), scanline: num(p.scanline, 0), invert: num(p.invert, 0), border: num(p.border, 0), bright: num(p.bright, 0), duotone: num(p.duotone, 0), vibrance: num(p.vibrance, 0), mono: num(p.mono, 0), tint: num(p.tint, 0), balance: num(p.balance, 0), bleach: num(p.bleach, 0), fade: num(p.fade, 0), splittone: num(p.splittone, 0), highlights: num(p.highlights, 0), glow: num(p.glow, 0), solarize: num(p.solarize, 0), expose: num(p.expose, 0), threshold: num(p.threshold, 0), crossprocess: num(p.crossprocess, 0), falsecolor: num(p.falsecolor, 0), gradientmap: num(p.gradientmap, 0), pastel: num(p.pastel, 0), infrared: num(p.infrared, 0), radial: num(p.radial, 0), swirl: num(p.swirl, 0), night: num(p.night, 0), emboss: num(p.emboss, 0), edge: num(p.edge, 0), pixelate: num(p.pixelate, 0), rgbshift: num(p.rgbshift, 0)
   };
 }
 function applyPreset(idx){
@@ -1209,7 +1286,7 @@ function applyPreset(idx){
   sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
   maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
   denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
-  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma; clampRad=s.clampRad; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline; invert=s.invert; border=s.border; bright=s.bright; duotone=s.duotone; vibrance=s.vibrance; mono=s.mono; tint=s.tint; balance=s.balance; bleach=s.bleach; fade=s.fade; splittone=s.splittone; highlights=s.highlights; glow=s.glow; solarize=s.solarize; expose=s.expose; threshold=s.threshold; crossprocess=s.crossprocess; falsecolor=s.falsecolor; gradientmap=s.gradientmap;
+  vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma; clampRad=s.clampRad; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline; invert=s.invert; border=s.border; bright=s.bright; duotone=s.duotone; vibrance=s.vibrance; mono=s.mono; tint=s.tint; balance=s.balance; bleach=s.bleach; fade=s.fade; splittone=s.splittone; highlights=s.highlights; glow=s.glow; solarize=s.solarize; expose=s.expose; threshold=s.threshold; crossprocess=s.crossprocess; falsecolor=s.falsecolor; gradientmap=s.gradientmap; pastel=s.pastel; infrared=s.infrared; radial=s.radial; swirl=s.swirl; night=s.night; emboss=s.emboss; edge=s.edge; pixelate=s.pixelate; rgbshift=s.rgbshift;
   syncSceneUI(); clearAccum();
 }
 $('scene').onchange = e=>{
@@ -1298,6 +1375,15 @@ function syncSceneUI(){
   if($('crossprocess')) $('crossprocess').value = Math.round(crossprocess * 100);
   if($('falsecolor')) $('falsecolor').value = Math.round(falsecolor * 100);
   if($('gradientmap')) $('gradientmap').value = Math.round(gradientmap * 100);
+  if($('pastel')) $('pastel').value = Math.round(pastel * 100);
+  if($('infrared')) $('infrared').value = Math.round(infrared * 100);
+  if($('radial')) $('radial').value = Math.round(radial * 100);
+  if($('swirl')) $('swirl').value = Math.round(swirl * 100);
+  if($('night')) $('night').value = Math.round(night * 100);
+  if($('emboss')) $('emboss').value = Math.round(emboss * 100);
+  if($('edge')) $('edge').value = Math.round(edge * 100);
+  if($('pixelate')) $('pixelate').value = Math.round(pixelate * 100);
+  if($('rgbshift')) $('rgbshift').value = Math.round(rgbshift * 100);
   if($('ap')) $('ap').value = Math.round(aperture * 100);
   if($('sunAz')){ $('sunAz').value = Math.round(sunAz); if($('sunAzVal')) $('sunAzVal').textContent=Math.round(sunAz); }
   if($('sunEl')){ $('sunEl').value = Math.round(sunEl); if($('sunElVal')) $('sunElVal').textContent=Math.round(sunEl); }
@@ -1325,7 +1411,7 @@ $('sceneFile').onchange = e=>{
       sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
       maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
       denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
-      vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline; invert=s.invert; border=s.border; bright=s.bright; duotone=s.duotone; vibrance=s.vibrance; mono=s.mono; tint=s.tint; balance=s.balance; bleach=s.bleach; fade=s.fade; splittone=s.splittone; highlights=s.highlights; glow=s.glow; solarize=s.solarize; expose=s.expose; threshold=s.threshold; crossprocess=s.crossprocess; falsecolor=s.falsecolor; gradientmap=s.gradientmap;
+      vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline; invert=s.invert; border=s.border; bright=s.bright; duotone=s.duotone; vibrance=s.vibrance; mono=s.mono; tint=s.tint; balance=s.balance; bleach=s.bleach; fade=s.fade; splittone=s.splittone; highlights=s.highlights; glow=s.glow; solarize=s.solarize; expose=s.expose; threshold=s.threshold; crossprocess=s.crossprocess; falsecolor=s.falsecolor; gradientmap=s.gradientmap; pastel=s.pastel; infrared=s.infrared; radial=s.radial; swirl=s.swirl; night=s.night; emboss=s.emboss; edge=s.edge; pixelate=s.pixelate; rgbshift=s.rgbshift;
       syncSceneUI(); clearAccum();
     }catch(err){ /* 解析失败静默忽略 */ }
   };
@@ -1384,6 +1470,15 @@ $('threshold').oninput = e=>{ threshold=+e.target.value/100; $('thresholdVal').t
 $('crossprocess').oninput = e=>{ crossprocess=+e.target.value/100; $('crossprocessVal').textContent=crossprocess.toFixed(2); };
 $('falsecolor').oninput = e=>{ falsecolor=+e.target.value/100; $('falsecolorVal').textContent=falsecolor.toFixed(2); };
 $('gradientmap').oninput = e=>{ gradientmap=+e.target.value/100; $('gradientmapVal').textContent=gradientmap.toFixed(2); };
+$('pastel').oninput = e=>{ pastel=+e.target.value/100; $('pastelVal').textContent=pastel.toFixed(2); };
+$('infrared').oninput = e=>{ infrared=+e.target.value/100; $('infraredVal').textContent=infrared.toFixed(2); };
+$('radial').oninput = e=>{ radial=+e.target.value/100; $('radialVal').textContent=radial.toFixed(2); };
+$('swirl').oninput = e=>{ swirl=+e.target.value/100; $('swirlVal').textContent=swirl.toFixed(2); };
+$('night').oninput = e=>{ night=+e.target.value/100; $('nightVal').textContent=night.toFixed(2); };
+$('emboss').oninput = e=>{ emboss=+e.target.value/100; $('embossVal').textContent=emboss.toFixed(2); };
+$('edge').oninput = e=>{ edge=+e.target.value/100; $('edgeVal').textContent=edge.toFixed(2); };
+$('pixelate').oninput = e=>{ pixelate=+e.target.value/100; $('pixelateVal').textContent=pixelate.toFixed(2); };
+$('rgbshift').oninput = e=>{ rgbshift=+e.target.value/100; $('rgbshiftVal').textContent=rgbshift.toFixed(2); };
 // 导入外部模型：OBJ / glTF（最简解析），替换当前网格并重建 BVH
 $('modelFile').addEventListener('change', e=>{
   const file = e.target.files && e.target.files[0]; if(!file) return;
@@ -1532,6 +1627,15 @@ function loop(){
   gl.uniform1f(u(showProg,'uCrossprocess'), crossprocess);
   gl.uniform1f(u(showProg,'uFalsecolor'), falsecolor);
   gl.uniform1f(u(showProg,'uGradientmap'), gradientmap);
+  gl.uniform1f(u(showProg,'uPastel'), pastel);
+  gl.uniform1f(u(showProg,'uInfrared'), infrared);
+  gl.uniform1f(u(showProg,'uRadial'), radial);
+  gl.uniform1f(u(showProg,'uSwirl'), swirl);
+  gl.uniform1f(u(showProg,'uNight'), night);
+  gl.uniform1f(u(showProg,'uEmboss'), emboss);
+  gl.uniform1f(u(showProg,'uEdge'), edge);
+  gl.uniform1f(u(showProg,'uPixelate'), pixelate);
+  gl.uniform1f(u(showProg,'uRgbshift'), rgbshift);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   frame++;
