@@ -217,6 +217,11 @@
       <input type="range" id="chromaStr" min="0" max="200" step="5" value="50" />
     </div>
 
+    <div class="row">
+      <label>色差强度Amt <span class="val" id="chromaAmtVal">0.50</span></label>
+      <input type="range" id="chromaAmt" min="0" max="100" step="5" value="50" />
+    </div>
+
     <div class="row" style="margin-top:8px;">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
         <input type="checkbox" id="grain" /> 胶片噪点 Film Grain（颗粒感后处理）
@@ -259,6 +264,11 @@
     </div>
 
     <div class="row">
+      <label>色相旋转 HueShift <span class="val" id="hueShiftVal">0</span></label>
+      <input type="range" id="hueShift" min="-180" max="180" step="1" value="0" />
+    </div>
+
+    <div class="row">
       <label>复古褐调 Sepia <span class="val" id="sepiaVal">0.00</span></label>
       <input type="range" id="sepia" min="0" max="100" step="1" value="0" />
     </div>
@@ -289,6 +299,15 @@
     <div class="row">
       <label>双色调 Duotone <span class="val" id="duotoneVal">0.00</span></label>
       <input type="range" id="duotone" min="0" max="100" step="1" value="0" />
+    </div>
+
+    <div class="row">
+      <label>双色调·暗部色 <span class="val" id="duotoneShadowVal"></span></label>
+      <input type="color" id="duotoneShadow" value="#0d001a" />
+    </div>
+    <div class="row">
+      <label>双色调·高光色 <span class="val" id="duotoneHighVal"></span></label>
+      <input type="color" id="duotoneHigh" value="#ffe6b3" />
     </div>
     <div class="row">
       <label>自然饱和度 Vibrance <span class="val" id="vibranceVal">0.00</span></label>
@@ -334,6 +353,8 @@
       <input type="range" id="gradientmap" min="0" max="100" step="1" value="0" />
       <label>粉彩 Pastel <span class="val" id="pastelVal">0.00</span></label>
       <input type="range" id="pastel" min="0" max="100" step="1" value="0" />
+      <label>水彩 Watercolor <span class="val" id="watercolorVal">0.00</span></label>
+      <input type="range" id="watercolor" min="0" max="100" step="1" value="0" />
       <label>红外假彩 Infrared <span class="val" id="infraredVal">0.00</span></label>
       <input type="range" id="infrared" min="0" max="100" step="1" value="0" />
       <label>径向色相 Radial <span class="val" id="radialVal">0.00</span></label>
@@ -348,6 +369,8 @@
       <input type="range" id="edge" min="0" max="100" step="1" value="0" />
       <label>像素化 Pixelate <span class="val" id="pixelateVal">0.00</span></label>
       <input type="range" id="pixelate" min="0" max="100" step="1" value="0" />
+      <label>像素尺寸 Pixel Size <span class="val" id="pixelSizeVal">0.00</span></label>
+      <input type="range" id="pixelSize" min="0" max="100" step="1" value="0" />
       <label>RGB 偏移 RGB Shift <span class="val" id="rgbshiftVal">0.00</span></label>
       <input type="range" id="rgbshift" min="0" max="100" step="1" value="0" />
       <label>半调网点 Halftone <span class="val" id="halftoneVal">0.00</span></label>
