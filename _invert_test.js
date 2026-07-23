@@ -34,7 +34,7 @@ ok('syncSceneUI 含 invert 滑块同步', /\$\('invert'\)\.value = Math\.round\(
 ok('uniform 绑定 uInvert', /u\(showProg,'uInvert'\)/.test(main));
 ok('UI oninput 接线 invert', /\$\('invert'\)\.oninput/.test(main));
 ok('index.html 含 invert 滑块', /id="invert"/.test(html));
-ok('presetToParams 字段数 95(含 invert/border/bright/duotone/vibrance/mono/tint/balance/bleach/fade/splittone/highlights/glow/solarize/expose/threshold/crossprocess/falsecolor/gradientmap/pastel/infrared/radial/swirl/night/emboss/edge/pixelate/rgbshift/halftone/techni/vhs/colorkey/anaglyph/oil/lomo/leak/wave/cnoise/kaleido/ripple/huequant/lift/hsat/fisheye/pointOn/pointPos/pointColor/pointInt/glitch)', (()=>{ const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/); const f = eval('(' + m[0] + ')'); return Object.keys(f({})).length === 97; })());
+ok('presetToParams 字段数 95(含 invert/border/bright/duotone/vibrance/mono/tint/balance/bleach/fade/splittone/highlights/glow/solarize/expose/threshold/crossprocess/falsecolor/gradientmap/pastel/infrared/radial/swirl/night/emboss/edge/pixelate/rgbshift/halftone/techni/vhs/colorkey/anaglyph/oil/lomo/leak/wave/cnoise/kaleido/ripple/huequant/lift/hsat/fisheye/pointOn/pointPos/pointColor/pointInt/glitch)', (()=>{ const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/); const f = eval('(' + m[0] + ')'); return Object.keys(f({})).length === 102; })());
 
 console.log(`\n[Lumen invert] pass=${pass} fail=${fail}`);
 process.exit(fail ? 1 : 0);

@@ -16,7 +16,7 @@ ok('GLSL 存在 uCyanotype 分支', /if\(uCyanotype > 0\.0\)/.test(main));
 ok('GLSL 蓝晒三段映射(暗/中/亮)', main.includes('cyDark') && main.includes('cyMid') && main.includes('cyLite'));
 ok('GLSL 以 mix(c, cy, uCyanotype) 收尾', main.includes('c = mix(c, cy, uCyanotype);'));
 // 3. 状态默认值
-ok('state 默认 cyanotype=0', /glitch=0, cyanotype=0, selenium=0;/.test(main));
+ok('state 默认 cyanotype=0', /glitch=0, cyanotype=0, selenium=0, moonlight=0/.test(main));
 // 4. serialize
 ok('serializeScene 含 cyanotype', /glitch: s\.glitch, cyanotype: s\.cyanotype/.test(main));
 // 5. deserialize
@@ -35,13 +35,13 @@ ok('uniform1f 绑定 uCyanotype', main.includes("gl.uniform1f(u(showProg,'uCyano
 ok('index.html 有 cyanotype 滑块', html.includes('id="cyanotype"') && html.includes('id="cyanotypeVal"'));
 ok('index.html 滑块中文标签(蓝晒)', html.includes('蓝晒 Cyanotype'));
 
-// presetToParams 实际执行返回 97 字段
+// presetToParams 实际执行返回 102 字段
 const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/);
 ok('presetToParams 可提取', !!m);
 if(m){
   const f = eval('(' + m[0] + ')');
   const keys = Object.keys(f({}));
-  ok('presetToParams 返回 97 字段', keys.length === 97);
+  ok('presetToParams 返回 102 字段', keys.length === 102);
   ok('字段含 cyanotype 且默认 0', keys.includes('cyanotype') && f({}).cyanotype === 0);
   ok('cyanotype 数值透传', f({ cyanotype: 0.7 }).cyanotype === 0.7);
 }

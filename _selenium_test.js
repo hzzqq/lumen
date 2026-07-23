@@ -14,7 +14,7 @@ ok('GLSL 用紫褐硒色 seTone', main.includes('vec3 seTone = vec3(0.42, 0.30, 
 ok('GLSL 阴影权重 smoothstep', main.includes('1.0 - smoothstep(0.0, 0.75, l)'));
 ok('GLSL 最终 mix(c, se, uSelenium)', main.includes('c = mix(c, se, uSelenium);'));
 // 3. state 默认
-ok('state 默认 selenium=0', main.includes('glitch=0, cyanotype=0, selenium=0;'));
+ok('state 默认 selenium=0', main.includes('glitch=0, cyanotype=0, selenium=0, moonlight=0'));
 // 4. serialize
 ok('serialize 含 selenium', main.includes('cyanotype: s.cyanotype, selenium: s.selenium'));
 // 5. deserialize
@@ -30,17 +30,17 @@ ok('oninput 绑定', main.includes("$('selenium').oninput = e=>{ selenium=+e.tar
 // 10. uniform 绑定
 ok('uniform1f 绑定', main.includes("gl.uniform1f(u(showProg,'uSelenium'), selenium);"));
 // 11. 本地快照列表
-ok('快照列表含 selenium', main.includes('glitch, cyanotype, selenium, fisheye });'));
+ok('快照列表含 selenium', main.includes('glitch, cyanotype, selenium, moonlight, verdigris, rosegold, aurora, amber, fisheye });'));
 // 12. index.html 滑块
 ok('index.html 滑块', html.includes('id="selenium"') && html.includes('硒调 Selenium'));
 
-// presetToParams 实际执行返回 97 字段，且 selenium 默认 0 / 透传
+// presetToParams 实际执行返回 102 字段，且 selenium 默认 0 / 透传
 {
   const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/);
   ok('presetToParams 可抽取', !!m);
   const f = eval('(' + m[0] + ')');
   const keys = Object.keys(f({}));
-  ok('presetToParams 返回 97 字段', keys.length === 97);
+  ok('presetToParams 返回 102 字段', keys.length === 102);
   ok('selenium 默认 0', f({}).selenium === 0);
   ok('selenium 透传 0.7', f({ selenium: 0.7 }).selenium === 0.7);
 }

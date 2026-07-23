@@ -15,7 +15,7 @@ ok('serializeScene 含 glitch: s.glitch', /glitch: s\.glitch/.test(main));
 ok('deserializeScene 含 glitch: num', /glitch: num\('glitch', 0\)/.test(main));
 ok('presetToParams 含 glitch: num', /glitch: num\(p\.glitch, 0\)/.test(main));
 ok('applyPreset/importScene 含 glitch=s.glitch', /glitch=s\.glitch;/.test(main));
-ok('exportScene 调用传入 glitch', /glitch, fisheye \}\)/.test(main));
+ok('exportScene 调用传入 glitch', /glitch, cyanotype, selenium, moonlight, verdigris, rosegold, aurora, amber, fisheye \}\)/.test(main));
 ok('loop 绑定 u(showProg,\'uGlitch\')', /u\(showProg,'uGlitch'\)/.test(main));
 ok('syncSceneUI 恢复 glitch 滑块', /\$\('glitch'\)\.value = Math\.round\(glitch \* 100\)/.test(main));
 ok('oninput 处理器更新 glitch', /\$\('glitch'\)\.oninput/.test(main));
