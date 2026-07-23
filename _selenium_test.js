@@ -30,7 +30,7 @@ ok('oninput 绑定', main.includes("$('selenium').oninput = e=>{ selenium=+e.tar
 // 10. uniform 绑定
 ok('uniform1f 绑定', main.includes("gl.uniform1f(u(showProg,'uSelenium'), selenium);"));
 // 11. 本地快照列表
-ok('快照列表含 selenium', main.includes('glitch, cyanotype, selenium, moonlight, verdigris, rosegold, aurora, amber, fisheye });'));
+ok('快照列表含 selenium', main.includes('glitch, cyanotype, selenium, moonlight, verdigris, rosegold, aurora, amber, fisheye, watercolor'));
 // 12. index.html 滑块
 ok('index.html 滑块', html.includes('id="selenium"') && html.includes('硒调 Selenium'));
 
@@ -40,7 +40,7 @@ ok('index.html 滑块', html.includes('id="selenium"') && html.includes('硒调 
   ok('presetToParams 可抽取', !!m);
   const f = eval('(' + m[0] + ')');
   const keys = Object.keys(f({}));
-  ok('presetToParams 返回 102 字段', keys.length === 102);
+  ok('presetToParams 返回 117 字段', keys.length === 117);
   ok('selenium 默认 0', f({}).selenium === 0);
   ok('selenium 透传 0.7', f({ selenium: 0.7 }).selenium === 0.7);
 }

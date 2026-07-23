@@ -29,7 +29,7 @@ for(const w of WANT){
   ok(`${w.ci} 预设「${w.name}」存在`, idx >= 0);
   if(idx < 0) continue;
   const s = presetToParams(PRESETS[idx]);
-  ok(`「${w.name}」归一化后 102 字段`, Object.keys(s).length === 102);
+  ok(`「${w.name}」归一化后 117 字段`, Object.keys(s).length === 117);
   for(const [k, v] of Object.entries(w.fields)){
     ok(`「${w.name}」${k}=${v}`, s[k] === v);
   }

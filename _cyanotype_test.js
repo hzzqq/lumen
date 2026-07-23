@@ -41,7 +41,7 @@ ok('presetToParams 可提取', !!m);
 if(m){
   const f = eval('(' + m[0] + ')');
   const keys = Object.keys(f({}));
-  ok('presetToParams 返回 102 字段', keys.length === 102);
+  ok('presetToParams 返回 117 字段', keys.length === 117);
   ok('字段含 cyanotype 且默认 0', keys.includes('cyanotype') && f({}).cyanotype === 0);
   ok('cyanotype 数值透传', f({ cyanotype: 0.7 }).cyanotype === 0.7);
 }

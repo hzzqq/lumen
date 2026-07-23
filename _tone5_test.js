@@ -49,7 +49,7 @@ for(const { key, uni } of EFFECTS){
   const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/);
   const f = eval('(' + m[0] + ')');
   const s = f({});
-  ok('presetToParams 返回 102 字段', Object.keys(s).length === 102);
+  ok('presetToParams 返回 117 字段', Object.keys(s).length === 117);
   for(const { key } of EFFECTS) ok(`空预设 ${key} 默认 0`, s[key] === 0);
   const s2 = f({ moonlight: 0.4, verdigris: 0.5, rosegold: 0.6, aurora: 0.7, amber: 0.8 });
   ok('moonlight 透传 0.4', s2.moonlight === 0.4);
