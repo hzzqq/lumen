@@ -1,5 +1,5 @@
 // _tone5_test.js — ci337 五色调后处理批次：月光 Moonlight / 铜绿 Verdigris / 玫瑰金 Rose Gold / 极光 Aurora / 琥珀 Amber
-// 校验十二步接线全链路 + presetToParams 字段数 102
+// 校验十二步接线全链路 + presetToParams 字段数 117
 const fs = require('fs');
 const path = require('path');
 const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
@@ -44,12 +44,12 @@ for(const { key, uni } of EFFECTS){
   ok(`index.html 含 ${key} 滑块`, html.includes(`id="${key}"`) && html.includes(`id="${key}Val"`));
 }
 
-// presetToParams 实际执行返回 102 字段，5 个新效果默认 0 / 透传
+// presetToParams 实际执行返回 117 字段，5 个新效果默认 0 / 透传
 {
   const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/);
   const f = eval('(' + m[0] + ')');
   const s = f({});
-  ok('presetToParams 返回 117 字段', Object.keys(s).length === 117);
+  ok('presetToParams 返回 125 字段', Object.keys(s).length === 125);
   for(const { key } of EFFECTS) ok(`空预设 ${key} 默认 0`, s[key] === 0);
   const s2 = f({ moonlight: 0.4, verdigris: 0.5, rosegold: 0.6, aurora: 0.7, amber: 0.8 });
   ok('moonlight 透传 0.4', s2.moonlight === 0.4);

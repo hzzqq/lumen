@@ -71,6 +71,9 @@
         <option value="6">铜绿古董</option>
         <option value="7">玫瑰暖调</option>
         <option value="8">琥珀余晖</option>
+        <option value="9">深海蓝调</option>
+        <option value="10">赛博霓虹</option>
+        <option value="11">樱粉晨光</option>
       </select>
     </div>
 
@@ -102,6 +105,7 @@
         <option value="2">线性 (仅裁剪)</option>
         <option value="3">Uncharted2 (电影级)</option>
         <option value="4">AgX 电影感</option>
+        <option value="5">Hejl 快速胶片</option>
       </select>
     </div>
 
@@ -390,16 +394,40 @@
       <input type="range" id="radial" min="0" max="100" step="1" value="0" />
       <label>漩涡色相 Swirl <span class="val" id="swirlVal">0.00</span></label>
       <input type="range" id="swirl" min="0" max="100" step="1" value="0" />
+      <label>选择性颜色 Selective Color <span class="val" id="selColorVal">0.00</span></label>
+      <input type="range" id="selColor" min="0" max="100" step="1" value="0" />
+      <label>保留色相 Target Hue <span class="val" id="selHueVal">0</span></label>
+      <input type="range" id="selHue" min="0" max="360" step="1" value="0" />
+      <label>色相带半宽 Hue Range <span class="val" id="selRangeVal">45</span></label>
+      <input type="range" id="selRange" min="0" max="180" step="1" value="45" />
       <label>夜视绿 Night Vision <span class="val" id="nightVal">0.00</span></label>
       <input type="range" id="night" min="0" max="100" step="1" value="0" />
       <label>浮雕 Emboss <span class="val" id="embossVal">0.00</span></label>
       <input type="range" id="emboss" min="0" max="100" step="1" value="0" />
       <label>边缘检测 Edge Detect <span class="val" id="edgeVal">0.00</span></label>
       <input type="range" id="edge" min="0" max="100" step="1" value="0" />
+      <label>边缘检测 EdgeDetect <span class="val" id="edgeDetectVal">0.00</span></label>
+      <input type="range" id="edgeDetect" min="0" max="100" step="1" value="0" />
+      <label>色调分层 PosterizeNew <span class="val" id="posterizeNewVal">0.00</span></label>
+      <input type="range" id="posterizeNew" min="0" max="100" step="1" value="0" />
+      <label>老照片 SepiaNew <span class="val" id="sepiaNewVal">0.00</span></label>
+      <input type="range" id="sepiaNew" min="0" max="100" step="1" value="0" />
+      <label>鱼眼畸变 FisheyeNew <span class="val" id="fisheyeNewVal">0.00</span></label>
+      <input type="range" id="fisheyeNew" min="0" max="100" step="1" value="0" />
+      <label>镜头畸变 Lens <span class="val" id="lensVal">0.00</span></label>
+      <input type="range" id="lens" min="0" max="100" step="1" value="0" />
+      <label>透镜量 LensAmt(±桶/枕) <span class="val" id="lensAmtVal">0.30</span></label>
+      <input type="range" id="lensAmt" min="-100" max="100" step="1" value="30" />
+      <label>交叉影线 CrossHatch <span class="val" id="crossHatchVal">0.00</span></label>
+      <input type="range" id="crossHatch" min="0" max="100" step="1" value="0" />
       <label>像素化 Pixelate <span class="val" id="pixelateVal">0.00</span></label>
       <input type="range" id="pixelate" min="0" max="100" step="1" value="0" />
       <label>像素尺寸 Pixel Size <span class="val" id="pixelSizeVal">0.00</span></label>
       <input type="range" id="pixelSize" min="0" max="100" step="1" value="0" />
+      <label>点彩 Pointillize <span class="val" id="pointillizeVal">0.00</span></label>
+      <input type="range" id="pointillize" min="0" max="100" step="1" value="0" />
+      <label>点彩粒度 Point Size <span class="val" id="pointSizeVal">0.00</span></label>
+      <input type="range" id="pointSize" min="0" max="100" step="1" value="0" />
       <label>RGB 偏移 RGB Shift <span class="val" id="rgbshiftVal">0.00</span></label>
       <input type="range" id="rgbshift" min="0" max="100" step="1" value="0" />
       <label>半调网点 Halftone <span class="val" id="halftoneVal">0.00</span></label>

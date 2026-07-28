@@ -53,7 +53,7 @@ ok('GLSL 链路含 uScanline>0 分支', /if\(uScanline > 0\.0\)/.test(main));
 ok('GLSL 使用 mix(1.0, s, uScanline)', /mix\(1\.0, s, uScanline\)/.test(main));
 ok('state 默认含 scanline=0', /scanline=0[,;]/.test(main));
 ok('serialize 含 scanline: s.scanline', /scanline: s\.scanline/.test(main));
-ok('deserialize 含 scanline: num', /scanline: num\('scanline', 0\)/.test(main));
+ok('deserialize 含 scanline: num', /scanline: Math\.max\(0, Math\.min\(1, num\('scanline', 0\)\)\)/.test(main));
 ok('presetToParams 含 scanline', /scanline: num\(p\.scanline, 0\)/.test(main));
 ok('applyPreset 含 scanline=s.scanline', /scanline=s\.scanline;/.test(main));
 ok('syncSceneUI 含 scanline 滑块同步', /\$\('scanline'\)\.value = Math\.round\(scanline \* 100\)/.test(main));

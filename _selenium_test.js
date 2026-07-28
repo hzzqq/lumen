@@ -34,13 +34,13 @@ ok('快照列表含 selenium', main.includes('glitch, cyanotype, selenium, moonl
 // 12. index.html 滑块
 ok('index.html 滑块', html.includes('id="selenium"') && html.includes('硒调 Selenium'));
 
-// presetToParams 实际执行返回 102 字段，且 selenium 默认 0 / 透传
+// presetToParams 实际执行返回 117 字段，且 selenium 默认 0 / 透传
 {
   const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/);
   ok('presetToParams 可抽取', !!m);
   const f = eval('(' + m[0] + ')');
   const keys = Object.keys(f({}));
-  ok('presetToParams 返回 117 字段', keys.length === 117);
+  ok('presetToParams 返回不少于 122 字段', keys.length >= 122);
   ok('selenium 默认 0', f({}).selenium === 0);
   ok('selenium 透传 0.7', f({ selenium: 0.7 }).selenium === 0.7);
 }

@@ -19,8 +19,8 @@ ok('uniform 绑定 uOil', /u\(showProg,'uOil'\)/.test(main));
 ok('index.html 含 oil 滑块', /id="oil"/.test(html));
 
 // ---- R2 隐性修复：show 着色器末端 NaN/inf 钳制守卫 ----
-ok('show 着色器在 outColor 前钳制 NaN/inf', /c = clamp\(c, 0\.0, 1\.0\);\s*\n\s*outColor = vec4\(c,1\.0\);/.test(main));
-ok('clamp 守卫位于 outColor 之前', main.indexOf('c = clamp(c, 0.0, 1.0);') < main.indexOf('outColor = vec4(c,1.0);'));
+ok('show 着色器末端 NaN/inf 钳制守卫', /outColor = vec4\(clamp\(c, 0\.0, 1\.0\), 1\.0\);/.test(main));
+ok('clamp 守卫位于显示 outColor 之内', main.slice(main.lastIndexOf('outColor = vec4')).includes('clamp(c, 0.0, 1.0)'));
 
 // ---- 字段数（宽松，兼容后续迭代）----
 ok('presetToParams 字段数 >= 80(含 oil)', (() => {

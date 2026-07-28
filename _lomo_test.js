@@ -18,21 +18,21 @@ ok('oninput 接线 lomo', /\$\('lomo'\)\.oninput/.test(main));
 ok('uniform 绑定 uLomo', /u\(showProg,'uLomo'\)/.test(main));
 ok('index.html 含 lomo 滑块', /id="lomo"/.test(html));
 
-// ---- R2 隐性修复：toneMode 钳制到合法范围 [0,4]（防越界/负数模式）----
-ok('presetToParams 钳制 toneMode 上界(99->4)', (() => {
+// ---- R2 隐性修复：toneMode 钳制到合法范围 [0,5]（防越界/负数模式；5=Hejl 快速胶片）----
+ok('presetToParams 钳制 toneMode 上界(99->5)', (() => {
   const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/);
   const f = eval('(' + m[0] + ')');
-  return f({ toneMode: 99 }).toneMode === 4;
+  return f({ toneMode: 99 }).toneMode === 5;
 })());
 ok('presetToParams 钳制 toneMode 下界(-5->0)', (() => {
   const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/);
   const f = eval('(' + m[0] + ')');
   return f({ toneMode: -5 }).toneMode === 0;
 })());
-ok('deserializeScene 钳制 toneMode 上界(99->4)', (() => {
+ok('deserializeScene 钳制 toneMode 上界(99->5)', (() => {
   const m = main.match(/function deserializeScene\(d\)\{[\s\S]*?\n\}/);
   const f = eval('(' + m[0] + ')');
-  return f({ toneMode: 99 }).toneMode === 4;
+  return f({ toneMode: 99 }).toneMode === 5;
 })());
 
 // ---- 字段数（宽松, 兼容后续迭代）----

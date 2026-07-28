@@ -63,7 +63,7 @@ ok(/vec3\(0\.393, 0\.769, 0\.189\)/.test(main), 'sepia 矩阵 R 系数 0.393');
 ok(/mix\(c, sep, uSepia\)/.test(main), 'SHOW_FRAG mixes c with sepia by uSepia');
 ok(/, sepia: s\.sepia/.test(main), 'serializeScene includes sepia');
 ok(/sepia: num\('sepia', 0\)/.test(main), 'deserializeScene reads sepia');
-ok(/temp: num\('temp', 0\), hue: num\('hue', 0\), sepia: num\('sepia', 0\)/.test(main), 'presetToParams reads sepia');
+ok(/hue: num\('hue', 0\), sepia: num\('sepia', 0\)/.test(main), 'presetToParams reads sepia');
 ok(/temp=s\.temp; hue=s\.hue; sepia=s\.sepia;/.test(main), 'applyPreset + load set sepia');
 ok(/if\(\$\('sepia'\)\) \$\('sepia'\)\.value = Math\.round\(sepia \* 100\);/.test(main), 'syncSceneUI sets sepia slider');
 ok(/dither, temp, hue, sepia(, posterize)?(, letterbox)?(, scanline)?/.test(main), 'exportScene object includes sepia');

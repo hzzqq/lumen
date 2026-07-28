@@ -1,4 +1,4 @@
-// _tonepresets_test.js — ci341/ci345/ci349/ci353 四个色调预设：月夜极光/铜绿古董/玫瑰暖调/琥珀余晖
+// _tonepresets_test.js — ci341/ci345/ci349/ci353/ci426/ci444 色调预设：月夜极光/铜绿古董/玫瑰暖调/琥珀余晖/深海蓝调/樱粉晨光
 // 校验 PRESETS 新条目存在、字段合法、presetToParams 归一化正确、index.html 下拉同步。
 const fs = require('fs');
 const path = require('path');
@@ -20,16 +20,18 @@ const WANT = [
   { name: '铜绿古董', ci: 'ci345', fields: { verdigris: 0.6, fade: 0.25 } },
   { name: '玫瑰暖调', ci: 'ci349', fields: { rosegold: 0.5, glow: 0.2, vibrance: 0.3 } },
   { name: '琥珀余晖', ci: 'ci353', fields: { amber: 0.65, temp: 0.15 } },
+  { name: '深海蓝调', ci: 'ci426', fields: { fogDensity: 0.15, vignetteOn: true } },
+  { name: '樱粉晨光', ci: 'ci444', fields: { rosegold: 0.3, duotone: 0.5, hueShift: -8 } },
 ];
 
-ok('PRESETS 共 9 个（5 旧 + 4 新色调预设）', PRESETS.length === 9);
+ok('PRESETS 共 12 个（11 旧 + 6 新色调预设）', PRESETS.length === 12);
 
 for(const w of WANT){
   const idx = PRESETS.findIndex(p => p.name === w.name);
   ok(`${w.ci} 预设「${w.name}」存在`, idx >= 0);
   if(idx < 0) continue;
   const s = presetToParams(PRESETS[idx]);
-  ok(`「${w.name}」归一化后 117 字段`, Object.keys(s).length === 117);
+  ok(`「${w.name}」归一化后 125 字段`, Object.keys(s).length === 125);
   for(const [k, v] of Object.entries(w.fields)){
     ok(`「${w.name}」${k}=${v}`, s[k] === v);
   }
@@ -39,7 +41,7 @@ for(const w of WANT){
   }
   // 基本参数健全
   ok(`「${w.name}」exposure 有限且 > 0`, Number.isFinite(s.exposure) && s.exposure > 0);
-  ok(`「${w.name}」toneMode 在 0..4`, s.toneMode >= 0 && s.toneMode <= 4);
+  ok(`「${w.name}」toneMode 在 0..5`, s.toneMode >= 0 && s.toneMode <= 5);
   // index.html 下拉含该预设（value = 索引）
   ok(`index.html 含 <option value="${idx}">${w.name}`, html.includes(`<option value="${idx}">${w.name}</option>`));
 }

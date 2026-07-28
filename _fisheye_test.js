@@ -13,7 +13,7 @@ ok('serializeScene 含 fisheye: s.fisheye', /fisheye: s\.fisheye/.test(main));
 ok('deserializeScene 含 fisheye: num', /fisheye: num\('fisheye', 0\)/.test(main));
 ok('presetToParams 含 fisheye: num', /fisheye: num\(p\.fisheye, 0\)/.test(main));
 ok('applyPreset/importScene 含 fisheye=s.fisheye', /fisheye=s\.fisheye;/.test(main));
-ok('exportScene 调用传入 fisheye', /fisheye \}\)/.test(main));
+ok('exportScene 调用经 serializeScene 传入 fisheye', /exportScene'\)\.onclick[\s\S]*?serializeScene\([\s\S]*?fisheye,/.test(main));
 ok('loop 中绑定 u(ptProg,\'uFisheye\')', /u\(ptProg,'uFisheye'\)/.test(main));
 ok('syncSceneUI 恢复 fisheye 滑块', /\$\('fisheye'\)\.value = Math\.round\(fisheye \* 100\)/.test(main));
 ok('oninput 处理器更新 fisheye', /\$\('fisheye'\)\.oninput/.test(main));

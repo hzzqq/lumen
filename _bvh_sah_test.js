@@ -5,9 +5,9 @@ const NODE = 'C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2/n
 const src = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
 
 // 抽取真实源码片段（避免复制漂移）
-const faceNormal = src.match(/function faceNormal\([\s\S]*?\n}/)[0];
-const makeTorus  = src.match(/function makeTorus\([\s\S]*?\n}/)[0];
-const buildBVH   = src.match(/const LEAF = 8;[\s\S]*?return \{ nodes, ordered \};\n}/)[0];
+const faceNormal = src.match(/function faceNormal\([\s\S]*?\r?\n}/)[0];
+const makeTorus  = src.match(/function makeTorus\([\s\S]*?\r?\n}/)[0];
+const buildBVH   = src.match(/const LEAF = 8;[\s\S]*?return \{ nodes, ordered \};\r?\n}/)[0];
 
 const code = `${faceNormal}\n${makeTorus}\n${buildBVH}\nreturn { makeTorus, buildBVH };`;
 const { makeTorus:mt, buildBVH:bv } = (new Function(code))();

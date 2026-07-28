@@ -29,7 +29,7 @@ const effects = [
   { cycle: 'ci389', uniform: 'uScanlines',      field: 'scanlines',      def: 'scanlines=0,' },
   { cycle: 'ci393', uniform: 'uColorGrade',     field: 'colorGrade',     def: 'colorGrade=0,' },
   { cycle: 'ci393', uniform: 'uSaturation',     field: 'saturation',     def: 'saturation=1,' },
-  { cycle: 'ci393', uniform: 'uGradeContrast',  field: 'gradeContrast',  def: 'gradeContrast=1;' },
+  { cycle: 'ci393', uniform: 'uGradeContrast',  field: 'gradeContrast',  def: 'gradeContrast=1,' },
 ];
 
 for (const e of effects) {

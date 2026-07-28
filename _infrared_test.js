@@ -37,7 +37,7 @@ ok('main.js 声明 uInfrared uniform', /uniform float uInfrared;/.test(src));
 ok('main.js 含 uInfrared GLSL 分支', /if\(uInfrared > 0\.0\)\{/.test(src));
 ok('main.js 绑定 uInfrared uniform', /gl\.uniform1f\(u\(showProg,'uInfrared'\), infrared\);/.test(src));
 ok('presetToParams 含 infrared (p.)', /infrared: num\(p\.infrared, 0\)/.test(src));
-ok('serializeScene 含 infrared', /infrared: num\('infrared', 0\)/.test(src));
+ok('serializeScene 含 infrared', /infrared: Math\.max\(0, Math\.min\(1, num\('infrared', 0\)\)\)/.test(src));
 ok('state 默认 infrared=0', /infrared=0[,;]/.test(src));
 ok('applyPreset 赋值 infrared', /infrared=s\.infrared;/.test(src));
 ok('index.html 含 infrared 滑块', /id="infrared"/.test(html));

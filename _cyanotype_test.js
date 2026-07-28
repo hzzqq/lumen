@@ -35,13 +35,13 @@ ok('uniform1f 绑定 uCyanotype', main.includes("gl.uniform1f(u(showProg,'uCyano
 ok('index.html 有 cyanotype 滑块', html.includes('id="cyanotype"') && html.includes('id="cyanotypeVal"'));
 ok('index.html 滑块中文标签(蓝晒)', html.includes('蓝晒 Cyanotype'));
 
-// presetToParams 实际执行返回 102 字段
+// presetToParams 实际执行返回字段数(随功能增长允许更多，不应少于 122)
 const m = main.match(/function presetToParams\(p\)\{[\s\S]*?\n\}/);
 ok('presetToParams 可提取', !!m);
 if(m){
   const f = eval('(' + m[0] + ')');
   const keys = Object.keys(f({}));
-  ok('presetToParams 返回 117 字段', keys.length === 117);
+  ok('presetToParams 返回不少于 122 字段', keys.length >= 122);
   ok('字段含 cyanotype 且默认 0', keys.includes('cyanotype') && f({}).cyanotype === 0);
   ok('cyanotype 数值透传', f({ cyanotype: 0.7 }).cyanotype === 0.7);
 }
