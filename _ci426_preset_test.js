@@ -18,7 +18,7 @@ ok('ci426 预设「深海蓝调」存在', idx >= 0);
 ok('ci426 预设位于下拉索引 9', idx === 9);
 if (idx >= 0) {
   const s = presetToParams(PRESETS[idx]);
-  ok('ci426 归一化 125 字段', Object.keys(s).length === 125);
+  ok('ci426 归一化 131 字段', Object.keys(s).length === 131);
   ok('ci426 duotoneHigh 蓝调 [0.2,0.6,0.9]', Array.isArray(s.duotoneHigh) && s.duotoneHigh[0] === 0.2 && s.duotoneHigh[1] === 0.6 && s.duotoneHigh[2] === 0.9);
   ok('ci426 fogDensity=0.15', s.fogDensity === 0.15);
   ok('ci426 vignetteOn=true', s.vignetteOn === true);
