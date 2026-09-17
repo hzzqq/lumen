@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const NODE = 'C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2/node.exe';
+const NODE = process.execPath;
 const DIR = __dirname;
 const mainPath = path.join(DIR, 'main.js');
 const htmlPath = path.join(DIR, 'index.html');

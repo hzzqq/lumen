@@ -1875,10 +1875,18 @@ $('reset').onclick = ()=> clearAccum();
 $('pause').onclick = ()=> paused=!paused;
 $('rotate').onclick = ()=> autoRotate = !autoRotate;
 $('save').onclick = ()=>{
-  const a = document.createElement('a');
-  a.download = 'lumen_scene' + sceneId + '_spp' + frame + '.png';
-  a.href = canvas.toDataURL('image/png');
-  a.click();
+  const fabs = document.querySelectorAll('.wbh-fab, .wbs-fab');
+  const states = [];
+  fabs.forEach(el=>{ states.push([el, el.style.display]); el.style.display='none'; });
+  requestAnimationFrame(()=>{
+    const a = document.createElement('a');
+    a.download = 'lumen_scene' + sceneId + '_spp' + frame + '.png';
+    a.href = canvas.toDataURL('image/png');
+    a.click();
+    requestAnimationFrame(()=>{
+      states.forEach(([el, d])=>{ el.style.display = d || ''; });
+    });
+  });
 };
 $('maxspp').oninput = e=>{ maxSamples = +e.target.value; $('maxsppVal').textContent = maxSamples; };
 // ---------- 场景预设导出 / 导入 ----------
@@ -2361,3 +2369,30 @@ function loop(){
 }
 allocBuffers();
 loop();
+
+// ---- 键盘快捷键（ci460+ 新增）：避免在输入框/组合键时触发 ----
+window.addEventListener('keydown', function(e){
+  const tag = (e.target && e.target.tagName) || '';
+  if(/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+  if(e.ctrlKey || e.altKey || e.metaKey) return;
+  switch(e.key.toLowerCase()){
+    case ' ':
+      e.preventDefault();
+      paused = !paused;
+      if($('pause')) $('pause').textContent = paused ? '继续' : '暂停';
+      break;
+    case 'r':
+      e.preventDefault();
+      clearAccum();
+      break;
+    case 's':
+      e.preventDefault();
+      if($('save')) $('save').click();
+      break;
+    case 'a':
+      e.preventDefault();
+      autoRotate = !autoRotate;
+      if($('rotate')) $('rotate').textContent = autoRotate ? '停止旋转' : '自动旋转';
+      break;
+  }
+});

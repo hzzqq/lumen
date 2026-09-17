@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const NODE = 'C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2/node.exe';
+const NODE = process.execPath;
 const mainPath = path.join(__dirname, 'main.js');
 const main = fs.readFileSync(mainPath, 'utf8');
 

@@ -1,7 +1,7 @@
 // Lumen BVH SAH 校验（纯 JS 逻辑，不依赖 WebGL）：从 main.js 抽取真实源码执行并断言不变量。
 const fs = require('fs');
 const path = require('path');
-const NODE = 'C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2/node.exe';
+const NODE = process.execPath;
 const src = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
 
 // 抽取真实源码片段（避免复制漂移）

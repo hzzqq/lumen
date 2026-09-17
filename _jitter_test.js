@@ -2,7 +2,7 @@
 // 验证：逐帧偏移序列低差异、落在像素内、确定性、与 uJitter 强度乘积、以及 source 接线。
 const fs = require('fs');
 const path = require('path');
-const NODE = 'C:/Users/Administrator/.workbuddy/binaries/node/versions/22.22.2/node.exe';
+const NODE = process.execPath;
 const { execSync } = require('child_process');
 
 const dir = path.join(__dirname);
