@@ -381,6 +381,15 @@ Hit scene(vec3 ro, vec3 rd){
   return best;
 }
 
+// 外部 HDRI（Radiance .hdr equirect）：加载成功后覆盖程序化天空，成为所有未命中方向的环境光来源
+uniform sampler2D uEnvMap;   // RGBA32F equirect 纹理（JS 侧 parseHDR 解码）
+uniform float  uEnvHdrOn;    // 1=启用外部 HDRI
+uniform float  uEnvHdrInt;   // HDRI 亮度增益（hdr 动态范围大，独立于程序化环境强度可调）
+vec3 envSample(vec3 rd){
+  float u = atan(rd.z, rd.x) / 6.28318530718 + 0.5;
+  float v = acos(clamp(rd.y, -1.0, 1.0)) / 3.14159265359;
+  return texture(uEnvMap, vec2(u, v)).rgb * uEnvHdrInt * uEnv;
+}
 // 程序化 HDRI 风格环境贴图（渐变天空 + 太阳 + 地面）
 vec3 sky(vec3 d){
   float y = d.y;
@@ -492,7 +501,7 @@ vec3 radiance(vec3 ro, vec3 rd){
       L += thr * fogCol * fogA;
       thr *= (1.0 - fogA);
       if(!h.hit){ break; }
-    } else if(!h.hit){ L += thr*(uScene==7 ? spaceEnv(rd)*uEnv : sky(rd)); break; }
+    } else if(!h.hit){ L += thr*(uEnvHdrOn>0.5 ? envSample(rd) : (uScene==7 ? spaceEnv(rd)*uEnv : sky(rd))); break; }
     // 命中面光源：NEE 已覆盖的有限球光源（场景 2/5/6）在漫反射 bounce 上跳过，避免重复计光；
     // 其余场景（如 Cornell 无限平面光）仍由反弹直接照亮，不跳过。
     if(h.mat==3){
@@ -1675,6 +1684,71 @@ function parseGLTF(json){
   return tris;
 }
 
+// ---------- Radiance .hdr (RGBE) HDRI 贴图解码（最简） ----------
+// 支持：#?RADIANCE/#?RGBE 魔数、FORMAT=32-bit_rle_rgbe、-Y H +X W 标准方向；
+// 像素行支持新式 RLE 扫描线（每通道独立压缩）与 old-style 直通行。
+// 返回 { width, height, data: Float32Array(w*h*3) }；任何格式不满足返回 null（调用方告警）。
+function hdrDecodeChan(u8, p, w, out){       // 解码单通道到 out，返回新读取位置，失败返回 -1
+  let x = 0;
+  while(x < w){
+    if(p >= u8.length) return -1;
+    const c = u8[p++];
+    if(c > 128){                             // RLE run：重复 c-128 次
+      const run = c - 128;
+      if(x + run > w || p >= u8.length) return -1;
+      out.fill(u8[p++], x, x + run); x += run;
+    } else {                                 // 字面量：c 个原始字节
+      if(x + c > w || p + c > u8.length) return -1;
+      out.set(u8.subarray(p, p + c), x); p += c; x += c;
+    }
+  }
+  return p;
+}
+function parseHDR(buf){
+  const u8 = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  if(u8.length < 2 || u8[0] !== 0x23 || u8[1] !== 0x3F) return null;   // 必须以 '#?'（RADIANCE/RGBE）开头
+  let p = 0, width = 0, height = 0, formatOK = false;
+  while(p < u8.length){                      // header：逐行处理，直到遇到分辨率行（其后再无 header 行）
+    let e = p; while(e < u8.length && u8[e] !== 0x0A) e++;
+    const line = String.fromCharCode.apply(null, u8.slice(p, e));
+    p = e + 1;
+    const m = /^(-Y|\+Y|-X|\+X)\s+(\d+)\s+(-Y|\+Y|-X|\+X)\s+(\d+)$/.exec(line);
+    if(m){
+      if(m[1] !== '-Y' || m[3] !== '+X') return null;   // 仅支持标准扫描顺序
+      height = +m[2]; width = +m[4];
+      break;
+    }
+    if(line.charCodeAt(0) === 0x23 && line.charCodeAt(1) === 0x3F) continue;  // '#?' 魔数/变量行
+    if(line === 'FORMAT=32-bit_rle_rgbe') formatOK = true;
+    // 空行 / EXPOSURE / PRIMARIES 等变量行：忽略
+  }
+  if(!formatOK || width <= 0 || height <= 0) return null;
+  const data = new Float32Array(width*height*3);
+  const ch = [new Uint8Array(width), new Uint8Array(width), new Uint8Array(width), new Uint8Array(width)];
+  for(let y=0; y<height; y++){
+    if(u8[p] === 0x02 && u8[p+1] === 0x02 && width >= 8 && width < 32768){   // 新式 RLE 行
+      p += 2;
+      const hb = (u8[p]<<8) | u8[p+1]; p += 2;
+      if(hb !== width) return null;
+      for(let c=0; c<4; c++){ p = hdrDecodeChan(u8, p, width, ch[c]); if(p < 0) return null; }
+      for(let x=0; x<width; x++){
+        const e = ch[3][x], k = (y*width+x)*3;
+        const mul = e ? Math.pow(2, e-136) : 0;
+        data[k] = ch[0][x]*mul; data[k+1] = ch[1][x]*mul; data[k+2] = ch[2][x]*mul;
+      }
+    } else {                                 // old-style 直通行：w 个像素 × 4 字节
+      for(let x=0; x<width; x++){
+        if(p + 4 > u8.length) return null;
+        const r = u8[p], g = u8[p+1], b = u8[p+2], e = u8[p+3]; p += 4;
+        const k = (y*width+x)*3;
+        const mul = e ? Math.pow(2, e-136) : 0;
+        data[k] = r*mul; data[k+1] = g*mul; data[k+2] = b*mul;
+      }
+    }
+  }
+  return { width, height, data };
+}
+
 // 生成网格 + BVH 并上传（可重复调用以替换当前模型）
 let bvh = null, meshTex = null;
 const HAS_MESH = 1;
@@ -1718,7 +1792,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0, invert=0, border=0, bright=0, duotone=0, vibrance=0, mono=0, tint=0, balance=0, bleach=0, fade=0, splittone=0, highlights=0, glow=0, solarize=0, expose=0, threshold=0, crossprocess=0, falsecolor=0, gradientmap=0, pastel=0, infrared=0, radial=0, selColor=0, selHue=0, selRange=45, swirl=0, night=0, emboss=0, edge=0, pixelate=0, pointillize=0, pointSize=0, rgbshift=0, halftone=0, techni=0, vhs=0, colorkey=0, anaglyph=0, lomo=0, oil=0; leak=0, wave=0, cnoise=0, kaleido=0, ripple=0, huequant=0, lift=0, hsat=0, fisheye=0, pointOn=0, pointPos=[3,4,-2], pointColor=[1,0.9,0.8], pointInt=8, glitch=0, cyanotype=0, selenium=0, moonlight=0, verdigris=0, rosegold=0, aurora=0, amber=0, watercolor=0, pixelSize=0, hueShift=0, duotoneShadow=[0.05,0.0,0.1], duotoneHigh=[1.0,0.9,0.7], chromaAmt=0.5, bloomThreshold=0.0, glowThreshold=0.0, grainAmount=1.0, scanlines=0, colorGrade=0, saturation=1, gradeContrast=1, edgeDetect=0, posterizeNew=0, sepiaNew=0, fisheyeNew=0, lens=0, lensAmt=0.3, crossHatch=0;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, envHdrOn=false, envHdrInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0, invert=0, border=0, bright=0, duotone=0, vibrance=0, mono=0, tint=0, balance=0, bleach=0, fade=0, splittone=0, highlights=0, glow=0, solarize=0, expose=0, threshold=0, crossprocess=0, falsecolor=0, gradientmap=0, pastel=0, infrared=0, radial=0, selColor=0, selHue=0, selRange=45, swirl=0, night=0, emboss=0, edge=0, pixelate=0, pointillize=0, pointSize=0, rgbshift=0, halftone=0, techni=0, vhs=0, colorkey=0, anaglyph=0, lomo=0, oil=0; leak=0, wave=0, cnoise=0, kaleido=0, ripple=0, huequant=0, lift=0, hsat=0, fisheye=0, pointOn=0, pointPos=[3,4,-2], pointColor=[1,0.9,0.8], pointInt=8, glitch=0, cyanotype=0, selenium=0, moonlight=0, verdigris=0, rosegold=0, aurora=0, amber=0, watercolor=0, pixelSize=0, hueShift=0, duotoneShadow=[0.05,0.0,0.1], duotoneHigh=[1.0,0.9,0.7], chromaAmt=0.5, bloomThreshold=0.0, glowThreshold=0.0, grainAmount=1.0, scanlines=0, colorGrade=0, saturation=1, gradeContrast=1, edgeDetect=0, posterizeNew=0, sepiaNew=0, fisheyeNew=0, lens=0, lensAmt=0.3, crossHatch=0;
 // ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
 // 纯函数：不依赖 THREE，便于 Node 测试与复用。
 function serializeScene(s){
@@ -2168,6 +2242,50 @@ $('modelFile').addEventListener('change', e=>{
   };
   reader.readAsText(file);
 });
+// ---------- HDRI 环境贴图导入（Radiance .hdr）：解码 → float 纹理 → 覆盖程序化天空 ----------
+let envTex = null, envTexFallback = null;
+function buildEnvTexture(hdr){
+  const rgba = new Float32Array(hdr.width*hdr.height*4);
+  for(let i=0, j=0; i<hdr.data.length; i+=3, j+=4){
+    rgba[j] = hdr.data[i]; rgba[j+1] = hdr.data[i+1]; rgba[j+2] = hdr.data[i+2]; rgba[j+3] = 1.0;
+  }
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, hdr.width, hdr.height, 0, gl.RGBA, gl.FLOAT, rgba);
+  const lin = gl.getExtension('OES_texture_float_linear');   // float32 线性过滤非保证，缺扩展退 NEAREST
+  const filt = lin ? gl.LINEAR : gl.NEAREST;
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  if(envTex) gl.deleteTexture(envTex);
+  envTex = tex;
+  if(!envTexFallback){                                       // 1x1 占位纹理：未加载 HDRI 时绑给 sampler
+    envTexFallback = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, envTexFallback);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+}
+$('envFile').addEventListener('change', e=>{
+  const file = e.target.files && e.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const hdr = parseHDR(reader.result);
+      if(!hdr){ console.warn('[Lumen] HDRI 解析失败或格式不支持'); return; }
+      buildEnvTexture(hdr);
+      envHdrOn = true;
+      console.log('[Lumen] HDRI 已加载 ' + hdr.width + 'x' + hdr.height);
+      clearAccum();
+    }catch(err){ console.error('[Lumen] HDRI 加载失败', err); }
+  };
+  reader.readAsArrayBuffer(file);
+});
+$('envHdrInt').oninput = e=>{ envHdrInt=+e.target.value; $('envHdrIntVal').textContent=envHdrInt.toFixed(2); clearAccum(); };
 // 自动曝光：周期性回读累积缓冲中心区块的平均亮度，将曝光归一到目标亮度
 function readAvgLum(){
   const W = 64, H = 64;
@@ -2228,6 +2346,9 @@ function loop(){
   gl.uniform1f(u(ptProg,'uPointInt'), pointInt);
   gl.uniform1f(u(ptProg,'uFocus'), focusDist);
   gl.uniform1f(u(ptProg,'uAperture'), aperture);
+  gl.uniform1f(u(ptProg,'uEnvHdrOn'), envHdrOn ? 1.0 : 0.0);
+  gl.uniform1f(u(ptProg,'uEnvHdrInt'), envHdrInt);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, envTex || envTexFallback); gl.uniform1i(u(ptProg,'uEnvMap'), 3);
   const sd = computeSunDir(sunAz, sunEl);
   gl.uniform3f(u(ptProg,'uSunDir'), sd[0], sd[1], sd[2]);
   gl.uniform1f(u(ptProg,'uSunInt'), sunInt);
