@@ -1639,48 +1639,89 @@ function parseOBJ(text){
   }
   return tris;
 }
-// glTF 2.0（最简）：单 buffer（data: base64 内联）、POSITION 存取器、可选索引；
-// 仅支持 FLOAT(VEC3) 顶点与 UNSIGNED_INT/SHORT/BYTE 索引；材质近似为漫反射。
+// glTF 2.0（健壮版）：data: URI 内联 buffer（外部 .bin 明确报错）；
+// 存取器泛化读取：componentType 5120~5126 + SCALAR/VEC2/VEC3/VEC4 + byteStride 交错布局，
+// 全程 DataView 小端读取（不要求元素对齐），bufferView/accessor 越界中文报错；
+// primitive mode 支持 TRIANGLES(4)/STRIP(5)/FAN(6)，点线拓扑(0~3)跳过计数；
+// 法线存取器忽略（统一面法线重建），材质近似为漫反射——与 OBJ 路径一致。
 function parseGLTF(json){
+  const compSize = { 5120:1, 5121:1, 5122:2, 5123:2, 5125:4, 5126:4 };
+  const compNum  = { SCALAR:1, VEC2:2, VEC3:3, VEC4:4 };
   const buffers = (json.buffers || []).map(b=>{
     if(typeof b.uri === 'string' && b.uri.startsWith('data:')){
-      const b64 = b.uri.split(',')[1];
+      const b64 = b.uri.slice(b.uri.indexOf(',') + 1);
       return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
     }
-    return null;
+    throw new Error('glTF 引用了外部 buffer(.bin)，本版仅支持 data: URI 内联');
   });
-  const f32 = (acc)=>{
+  function readAccessor(ai){
+    const acc = json.accessors[ai];
+    if(!acc) throw new Error('glTF accessor 缺失 #' + ai);
+    const nC = compNum[acc.type];
+    if(!nC) throw new Error('glTF accessor type 不支持：' + acc.type);
+    const cS = compSize[acc.componentType];
+    if(!cS) throw new Error('glTF componentType 不支持：' + acc.componentType);
     const v = json.bufferViews[acc.bufferView];
-    return new Float32Array(buffers[v.buffer].buffer, (v.byteOffset||0) + (acc.byteOffset||0), acc.count*3);
-  };
-  const indicesOf = (acc)=>{
-    const v = json.bufferViews[acc.bufferView];
-    const base = (v.byteOffset||0) + (acc.byteOffset||0);
+    if(!v) throw new Error('glTF bufferView 缺失 #' + acc.bufferView);
     const buf = buffers[v.buffer];
-    if(acc.componentType === 5125) return new Uint32Array(buf.buffer, base, acc.count);
-    if(acc.componentType === 5123) return new Uint16Array(buf.buffer, base, acc.count);
-    if(acc.componentType === 5121) return new Uint8Array(buf.buffer, base, acc.count);
-    return new Uint32Array(buf.buffer, base, acc.count);
-  };
+    if(!buf) throw new Error('glTF buffer 缺失 #' + v.buffer);
+    const elem = cS * nC;
+    const stride = v.byteStride || elem;
+    const base = (v.byteOffset || 0) + (acc.byteOffset || 0);
+    if(base + (acc.count - 1) * stride + elem > buf.length)
+      throw new Error('glTF accessor 越界：count=' + acc.count + ' 超出 buffer ' + buf.length + ' 字节');
+    const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    const rd = {
+      5120: o=> dv.getInt8(o),      5121: o=> dv.getUint8(o),
+      5122: o=> dv.getInt16(o, true), 5123: o=> dv.getUint16(o, true),
+      5125: o=> dv.getUint32(o, true), 5126: o=> dv.getFloat32(o, true),
+    }[acc.componentType];
+    const out = [];
+    for(let i=0;i<acc.count;i++){
+      const o = base + i * stride;
+      if(nC === 1) out.push(rd(o));
+      else { const t = []; for(let c=0;c<nC;c++) t.push(rd(o + c * cS)); out.push(t); }
+    }
+    return out;
+  }
   const tris = [];
+  const tri = (a, b, c)=> tris.push({ v0:a, v1:b, v2:c, n: faceNormal(a,b,c), albedo:[0.82,0.6,0.38], mat:0 });
+  let skipped = 0;
   for(const mesh of (json.meshes || [])){
     for(const prim of (mesh.primitives || [])){
-      const pos = f32(json.accessors[prim.attributes.POSITION]);
-      const v = i => [pos[i*3], pos[i*3+1], pos[i*3+2]];
+      const mode = prim.mode == null ? 4 : prim.mode;
+      if(mode < 4){ skipped++; continue; }            // 点/线拓扑不产出三角形
+      const pAcc = json.accessors[prim.attributes && prim.attributes.POSITION];
+      if(!pAcc || pAcc.type !== 'VEC3' || pAcc.componentType !== 5126)
+        throw new Error('glTF POSITION 必须是 FLOAT VEC3');
+      const pos = readAccessor(prim.attributes.POSITION);
+      const v = i => pos[i];
+      let idx = null;
       if(prim.indices != null){
-        const id = indicesOf(json.accessors[prim.indices]);
-        for(let k=0;k<id.length;k+=3){
-          const a=v(id[k]), b=v(id[k+1]), c=v(id[k+2]);
-          tris.push({ v0:a, v1:b, v2:c, n: faceNormal(a,b,c), albedo:[0.82,0.6,0.38], mat:0 });
+        const iAcc = json.accessors[prim.indices];
+        if(!iAcc || !(iAcc.componentType === 5121 || iAcc.componentType === 5123 || iAcc.componentType === 5125))
+          throw new Error('glTF indices 必须是无符号标量索引(Uint8/Uint16/Uint32)');
+        idx = readAccessor(prim.indices);
+      }
+      if(mode === 4){                                  // TRIANGLES
+        for(let k=0;k+2<(idx ? idx.length : pos.length);k+=3){
+          const a = idx ? v(idx[k]) : v(k), b = idx ? v(idx[k+1]) : v(k+1), c = idx ? v(idx[k+2]) : v(k+2);
+          tri(a, b, c);
         }
-      } else {
-        for(let k=0;k<pos.length/3;k+=3){
-          const a=v(k), b=v(k+1), c=v(k+2);
-          tris.push({ v0:a, v1:b, v2:c, n: faceNormal(a,b,c), albedo:[0.82,0.6,0.38], mat:0 });
+      } else if(mode === 5){                           // TRIANGLE_STRIP
+        for(let k=0;k+2<(idx ? idx.length : pos.length);k++){
+          const a = idx ? v(idx[k]) : v(k), b = idx ? v(idx[k+1]) : v(k+1), c = idx ? v(idx[k+2]) : v(k+2);
+          tri(a, b, c);
+        }
+      } else {                                         // TRIANGLE_FAN
+        for(let k=2;k<(idx ? idx.length : pos.length);k++){
+          const a = idx ? v(idx[0]) : v(0), b = idx ? v(idx[k-1]) : v(k-1), c = idx ? v(idx[k]) : v(k);
+          tri(a, b, c);
         }
       }
     }
   }
+  if(skipped > 0) console.log('[Lumen] glTF 跳过点/线 primitive ×', skipped);
   return tris;
 }
 
