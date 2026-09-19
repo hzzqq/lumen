@@ -45,7 +45,7 @@ ok('默认雾色 hex = #ccd9e6', rgb2hex([0.8,0.85,0.9]) === '#ccd9e6');
 const main = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 ok('shader 声明 uniform vec3 uFogColor', /uniform vec3\s+uFogColor;/.test(main));
-ok('shader 雾色改用 uFogColor', /fogCol = uFogColor;/.test(main));
+ok('shader 雾色改用 uFogColor（受光合成 fogLit = uFogColor·(amb+sunLe·phase)）', /vec3 fogLit = uFogColor \* \(amb \+ sunLe \* phase\);/.test(main));
 ok('fogColor 进入状态变量', /fogColor=\[0\.8,0\.85,0\.9\]/.test(main));
 ok('serializeScene 含 fogColor', /fogColor: s\.fogColor/.test(main));
 ok('deserializeScene 含 fogColor', /fogColor: fin3\(d\.fogColor, \[0\.8,0\.85,0\.9\]\)/.test(main));
