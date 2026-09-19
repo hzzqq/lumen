@@ -134,7 +134,7 @@ ok('接线: presetToParams 默认 true（预设未声明不关闭）', src.inclu
 }
 ok('接线: syncSceneUI 守护回填', src.includes("if($('sunNee')) $('sunNee').checked = sunNeeOn;"));
 ok('接线: onchange 开关', src.includes("$('sunNee').onchange = e=>{ sunNeeOn = e.target.checked; clearAccum(); }"));
-ok('接线: 导出对象字面量携带字段', /denIters, neeOn, sunNeeOn, envInt,/.test(src));
+ok('接线: 导出对象字面量携带字段', /denIters, neeOn, sunNeeOn, (sunSoftOn, )?envInt,/.test(src));
 ok('接线: uniform 上传', src.includes("gl.uniform1f(u(ptProg,'uSunNee'), sunNeeOn ? 1.0 : 0.0)"));
 ok('UI: index.html sunNee 复选框（默认勾选）', /id="sunNee"[^>]*checked/.test(ihtml));
 

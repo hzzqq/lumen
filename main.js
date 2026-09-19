@@ -54,6 +54,7 @@ uniform vec3  uBgBottom;     // 天空底色（horizon，线性 RGB）
 uniform float uRR;          // 俄罗斯轮盘提前终止（0 = 关闭）
 uniform float uNEE;         // 直接光采样 NEE（0 = 关闭，回退纯路径追踪）
 uniform float uSunNee;      // 太阳直接光 NEE + 玻璃球解析焦散（0 = 关闭，回退纯路径追踪）
+uniform float uSunSoft;     // 太阳软阴影（锥采样 K=4 可见性估计，0 = 硬阴影）
 uniform float uJitter;      // 黄金比渐进采样强度(0=关闭, 1=像素内全幅抖动, 逐帧在像素内偏移主射线)
 uniform int   uDebug;        // 调试视图：0=成品(beauty) 1=反照率(albedo) 2=法线(normal) 3=景深(depth)
 uniform float uClamp;        // 萤火虫钳制：单样本辐射上限（>0 生效，0=关闭），抑制爆点噪声
@@ -490,6 +491,17 @@ vec3 pointLight(vec3 p, vec3 n, vec3 albedo){
 // 数值：cosMax=0.99955 对齐 pow(s,1500) 半功率盘；双界面近轴菲涅耳透射 T≈0.92；
 // 抛物近似焦距 f=ior·R/(2(ior-1))（n=1.5 → 1.5R）；σ=0.35R 高斯斑，峰值聚光比 (R/σ)²·T≈7.5。
 // JS 镜像纯函数（solidAngleOf/sunConeSample/refractSphereExit/causticGain）在 computeSunDir 旁，供 Node 测试守护。
+// 太阳锥内方向采样（JS sunConeSample 同参镜像：r1→方位角 [0,1)，r2→轴夹角 0=轴上 1=锥缘，返回单位向量）
+vec3 sunCone(vec3 axis, float r1, float r2){
+  float cosMax = 0.99955;
+  float cosT = 1.0 - r2*(1.0-cosMax);
+  float sinT = sqrt(max(0.0, 1.0-cosT*cosT));
+  float ph = 6.2831853*r1;
+  vec3 up = abs(axis.z)<0.999? vec3(0,0,1):vec3(1,0,0);
+  vec3 t = normalize(cross(up,axis));
+  vec3 b = cross(axis,t);
+  return normalize(t*(sinT*cos(ph)) + b*(sinT*sin(ph)) + axis*cosT);
+}
 vec3 sunDirect(vec3 p, vec3 n, vec3 albedo){
   if(uSunInt <= 0.0) return vec3(0.0);
   float cosMax = 0.99955;
@@ -497,12 +509,9 @@ vec3 sunDirect(vec3 p, vec3 n, vec3 albedo){
   if(cosS <= 0.0) return vec3(0.0);       // 接收面背向太阳
   vec3 Le = vec3(22.0,18.0,13.0) * uSunInt * uEnv;   // 与 sky() 太阳盘同色同强度
   float omega = 6.2831853*(1.0-cosMax);   // 太阳盘立体角
-  Hit sh = scene(p + n*EPS, uSunDir);     // 阴影射线
-  if(!sh.hit){
-    return albedo * (1.0/PI) * Le * cosS * omega;    // 无遮挡：漫反射太阳直射
-  }
+  Hit sh = scene(p + n*EPS, uSunDir);     // 中心阴影射线：焦散检测 + 硬阴影判定
   if(sh.mat==2 && sh.rad > 0.0){
-    // 焦散：阴影线穿过玻璃球 → 双次折射解析 + 焦点高斯斑
+    // 焦散：阴影线穿过玻璃球 → 双次折射解析 + 焦点高斯斑（软阴影开启时保持解析近似，不混半影）
     float ior = 1.5;
     vec3 C = sh.p - sh.n*sh.rad;          // 球心 = 命中点 − 半径·外法线
     vec3 P1 = sh.p;                        // 入射点（阴影射线与球的最近交点）
@@ -524,6 +533,22 @@ vec3 sunDirect(vec3 p, vec3 n, vec3 albedo){
     float sigma = 0.35*sh.rad;
     float gain = exp(-dot(p-F, p-F)/(sigma*sigma));   // 焦点高斯斑
     return albedo * (1.0/PI) * Le * cosS * omega * 0.92 * (sh.rad*sh.rad)/(sigma*sigma) * gain;
+  }
+  if(uSunSoft > 0.5){
+    // 软阴影：K=4 个锥内方向估计可见性（贡献 = (Ω/K)·Σ 可见样本的 cosθ）；
+    // 全可见且锥角极小时收敛于解析直射项 cosS·Ω，半影自然过渡
+    float vis = 0.0;
+    for(int k=0;k<4;k++){
+      vec3 wi = sunCone(uSunDir, rnd(), rnd());
+      float ck = dot(n, wi);
+      if(ck <= 0.0) continue;
+      Hit shs = scene(p + n*EPS, wi);
+      if(!shs.hit) vis += ck;
+    }
+    return albedo * (1.0/PI) * Le * omega * (vis/4.0);
+  }
+  if(!sh.hit){
+    return albedo * (1.0/PI) * Le * cosS * omega;    // 无遮挡：漫反射太阳直射（硬阴影）
   }
   return vec3(0.0);                        // 不透明遮挡 → 阴影
 }
@@ -1880,7 +1905,7 @@ window.onmousemove = e=>{
 canvas.onwheel = e=>{ e.preventDefault(); radius *= (e.deltaY>0?1.08:0.93); radius=Math.max(3,Math.min(40,radius)); clearAccum(); };
 
 // ---------- 控件 ----------
-let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, envHdrOn=false, envHdrInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, sunNeeOn=true, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0, invert=0, border=0, bright=0, duotone=0, vibrance=0, mono=0, tint=0, balance=0, bleach=0, fade=0, splittone=0, highlights=0, glow=0, solarize=0, expose=0, threshold=0, crossprocess=0, falsecolor=0, gradientmap=0, pastel=0, infrared=0, radial=0, selColor=0, selHue=0, selRange=45, swirl=0, night=0, emboss=0, edge=0, pixelate=0, pointillize=0, pointSize=0, rgbshift=0, halftone=0, techni=0, vhs=0, colorkey=0, anaglyph=0, lomo=0, oil=0, leak=0, wave=0, cnoise=0, kaleido=0, ripple=0, huequant=0, lift=0, hsat=0, fisheye=0, pointOn=0, pointPos=[3,4,-2], pointColor=[1,0.9,0.8], pointInt=8, glitch=0, cyanotype=0, selenium=0, moonlight=0, verdigris=0, rosegold=0, aurora=0, amber=0, watercolor=0, pixelSize=0, hueShift=0, duotoneShadow=[0.05,0.0,0.1], duotoneHigh=[1.0,0.9,0.7], chromaAmt=0.5, bloomThreshold=0.0, glowThreshold=0.0, grainAmount=1.0, scanlines=0, colorGrade=0, saturation=1, gradeContrast=1, edgeDetect=0, posterizeNew=0, sepiaNew=0, fisheyeNew=0, lens=0, lensAmt=0.3, crossHatch=0;
+let sceneId=0, maxBounces=6, resScale=1.0, paused=false, envInt=1.0, envHdrOn=false, envHdrInt=1.0, exposure=1.0, focusDist=9.0, aperture=0.0, sunAz=35.0, sunEl=40.0, sunInt=1.0, autoRotate=false, rotAccum=0, maxSamples=2000, toneMode=0, autoExp=false, fogDensity=0.0, rrOn=false, denoiseOn=false, denIters=3, neeOn=true, sunNeeOn=true, sunSoftOn=false, bloomOn=false, bloomStr=0.6, bloomThr=1.0, vignetteOn=false, vigStr=0.5, chromaOn=false, chromaStr=0.5, grainOn=false, grainStr=0.08, gamma=2.2, rough=0.0, jitter=1.0, fogColor=[0.8,0.85,0.9], fov=50, bgTop=[0.20,0.36,0.66], bgBottom=[0.62,0.70,0.80], debugMode=0, clampRad=0, satStr=1, contrast=1, sharpen=0, dither=0, temp=0, hue=0, sepia=0, posterize=0, letterbox=0, scanline=0, invert=0, border=0, bright=0, duotone=0, vibrance=0, mono=0, tint=0, balance=0, bleach=0, fade=0, splittone=0, highlights=0, glow=0, solarize=0, expose=0, threshold=0, crossprocess=0, falsecolor=0, gradientmap=0, pastel=0, infrared=0, radial=0, selColor=0, selHue=0, selRange=45, swirl=0, night=0, emboss=0, edge=0, pixelate=0, pointillize=0, pointSize=0, rgbshift=0, halftone=0, techni=0, vhs=0, colorkey=0, anaglyph=0, lomo=0, oil=0, leak=0, wave=0, cnoise=0, kaleido=0, ripple=0, huequant=0, lift=0, hsat=0, fisheye=0, pointOn=0, pointPos=[3,4,-2], pointColor=[1,0.9,0.8], pointInt=8, glitch=0, cyanotype=0, selenium=0, moonlight=0, verdigris=0, rosegold=0, aurora=0, amber=0, watercolor=0, pixelSize=0, hueShift=0, duotoneShadow=[0.05,0.0,0.1], duotoneHigh=[1.0,0.9,0.7], chromaAmt=0.5, bloomThreshold=0.0, glowThreshold=0.0, grainAmount=1.0, scanlines=0, colorGrade=0, saturation=1, gradeContrast=1, edgeDetect=0, posterizeNew=0, sepiaNew=0, fisheyeNew=0, lens=0, lensAmt=0.3, crossHatch=0;
 // ---------- 场景预设（相机 + 渲染参数）JSON 导入/导出 ----------
 // 纯函数：不依赖 THREE，便于 Node 测试与复用。
 function serializeScene(s){
@@ -1892,7 +1917,7 @@ function serializeScene(s){
     focusDist: s.focusDist, aperture: s.aperture, maxSamples: s.maxSamples,
     sunAz: s.sunAz, sunEl: s.sunEl, sunInt: s.sunInt, rough: s.rough, jitter: s.jitter, fogColor: s.fogColor, fov: s.fov, bgTop: s.bgTop, bgBottom: s.bgBottom, debugMode: s.debugMode,
     toneMode: s.toneMode, autoExp: s.autoExp, fogDensity: s.fogDensity, rrOn: s.rrOn,
-    denoiseOn: s.denoiseOn, denIters: s.denIters, neeOn: s.neeOn, sunNeeOn: s.sunNeeOn, envInt: s.envInt,
+    denoiseOn: s.denoiseOn, denIters: s.denIters, neeOn: s.neeOn, sunNeeOn: s.sunNeeOn, sunSoftOn: s.sunSoftOn, envInt: s.envInt,
     bloomOn: s.bloomOn, bloomStr: s.bloomStr, bloomThr: s.bloomThr, vignetteOn: s.vignetteOn, vigStr: s.vigStr,
     chromaOn: s.chromaOn, chromaStr: s.chromaStr,
     grainOn: s.grainOn, grainStr: s.grainStr,
@@ -1917,7 +1942,7 @@ function deserializeScene(d){
     bgBottom: fin3(d.bgBottom, [0.62,0.70,0.80]),
     debugMode: num('debugMode', 0)|0,
     toneMode: Math.max(0, Math.min(typeof TONE_MODE_MAX !== 'undefined' ? TONE_MODE_MAX : 5, num('toneMode', 0))), autoExp: bool('autoExp', false), fogDensity: num('fogDensity', 0), rrOn: bool('rrOn', false),
-    denoiseOn: bool('denoiseOn', false), denIters: Math.min(8, num('denIters', 3)|0), neeOn: bool('neeOn', true), sunNeeOn: bool('sunNeeOn', true), envInt: num('envInt', 1),
+    denoiseOn: bool('denoiseOn', false), denIters: Math.min(8, num('denIters', 3)|0), neeOn: bool('neeOn', true), sunNeeOn: bool('sunNeeOn', true), sunSoftOn: bool('sunSoftOn', false), envInt: num('envInt', 1),
     bloomOn: bool('bloomOn', false), bloomStr: num('bloomStr', 0.6), bloomThr: num('bloomThr', 1.0),
     vignetteOn: bool('vignetteOn', false), vigStr: num('vigStr', 0.5),
     chromaOn: bool('chromaOn', false), chromaStr: Math.max(0, Math.min(2, num('chromaStr', 0.5))),
@@ -1944,7 +1969,7 @@ function validateScene(p){
   col3('fogColor'); col3('bgTop'); col3('bgBottom'); col3('duotoneShadow'); col3('duotoneHigh'); col3('pointColor');
   const t=p.target; if(!(Array.isArray(t)&&t.length===3&&t.every(x=>typeof x==='number'&&isFinite(x)))) issues.push({field:'target',msg:'target must be [x,y,z] of finite numbers',severity:'error'});
   const bool=(k)=>{ if(p[k]!==undefined && typeof p[k]!=='boolean') issues.push({field:k,msg:`${k} should be boolean`,severity:'warn'}); };
-  bool('vignetteOn'); bool('bloomOn'); bool('neeOn'); bool('sunNeeOn'); bool('rrOn'); bool('denoiseOn'); bool('autoExp'); bool('chromaOn'); bool('grainOn'); bool('pointOn');
+  bool('vignetteOn'); bool('bloomOn'); bool('neeOn'); bool('sunNeeOn'); bool('sunSoftOn'); bool('rrOn'); bool('denoiseOn'); bool('autoExp'); bool('chromaOn'); bool('grainOn'); bool('pointOn');
   const errs=issues.filter(i=>i.severity==='error').length;
   return { ok: errs===0, issues };
 }
@@ -2053,7 +2078,7 @@ function presetToParams(p){
     debugMode: num(p.debugMode, 0)|0,
     maxSamples: Math.max(1, Math.min(30000, num(p.maxSamples, 2000)|0)), toneMode: Math.max(0, Math.min(TONE_MODE_MAX, num(p.toneMode, 0)|0)), autoExp: bool(p.autoExp),
     fogDensity: num(p.fogDensity, 0), rrOn: bool(p.rrOn), denoiseOn: bool(p.denoiseOn), denIters: Math.min(8, num(p.denIters, 3)|0),
-    neeOn: bool(p.neeOn), sunNeeOn: p.sunNeeOn !== false, envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1),
+    neeOn: bool(p.neeOn), sunNeeOn: p.sunNeeOn !== false, sunSoftOn: bool(p.sunSoftOn), envInt: num(p.envInt, 1), bloomOn: bool(p.bloomOn), bloomStr: num(p.bloomStr, 0.6), bloomThr: num(p.bloomThr, 1),
     vignetteOn: bool(p.vignetteOn), vigStr: num(p.vigStr, 0.5),
     gamma: Math.max(0.1, Math.min(5.0, num(p.gamma, 2.2))), clampRad: num(p.clampRad, 0), satStr: num(p.satStr, 1), contrast: num(p.contrast, 1), sharpen: num(p.sharpen, 0), dither: num(p.dither, 0), temp: Math.max(-1, Math.min(1, num(p.temp, 0))), hue: num(p.hue, 0), sepia: num(p.sepia, 0), posterize: num(p.posterize, 0), letterbox: num(p.letterbox, 0), scanline: num(p.scanline, 0), invert: num(p.invert, 0), border: num(p.border, 0), bright: num(p.bright, 0), duotone: Math.max(0, Math.min(1, num(p.duotone, 0))),     vibrance: num(p.vibrance, 0), mono: num(p.mono, 0), tint: num(p.tint, 0), balance: num(p.balance, 0), bleach: num(p.bleach, 0), fade: num(p.fade, 0), splittone: num(p.splittone, 0), highlights: num(p.highlights, 0), glow: num(p.glow, 0), solarize: num(p.solarize, 0), expose: num(p.expose, 0), threshold: num(p.threshold, 0), crossprocess: num(p.crossprocess, 0), falsecolor: num(p.falsecolor, 0), gradientmap: num(p.gradientmap, 0), pastel: num(p.pastel, 0), infrared: num(p.infrared, 0), radial: num(p.radial, 0), selColor: num(p.selColor, 0), selHue: Math.max(0, Math.min(360, num(p.selHue, 0))), selRange: Math.max(0, Math.min(180, num(p.selRange, 45))), swirl: num(p.swirl, 0), night: num(p.night, 0), emboss: num(p.emboss, 0), edge: num(p.edge, 0), pixelate: num(p.pixelate, 0), rgbshift: num(p.rgbshift, 0), halftone: num(p.halftone, 0), techni: num(p.techni, 0), vhs: num(p.vhs, 0), colorkey: num(p.colorkey, 0), anaglyph: num(p.anaglyph, 0), oil: num(p.oil, 0), lomo: num(p.lomo, 0), leak: num(p.leak, 0), wave: num(p.wave, 0), cnoise: num(p.cnoise, 0), kaleido: num(p.kaleido, 0), ripple: num(p.ripple, 0), huequant: num(p.huequant, 0), lift: num(p.lift, 0), hsat: num(p.hsat, 0), fisheye: num(p.fisheye, 0), pointillize: Math.max(0, Math.min(1, num(p.pointillize, 0))), pointSize: Math.max(0, Math.min(1, num(p.pointSize, 0))), lens: num(p.lens, 0), lensAmt: Math.max(-1, Math.min(1, num(p.lensAmt, 0.3))), grainOn: bool(p.grainOn), grainStr: num(p.grainStr, 0.08), pointOn: bool(p.pointOn), pointPos: arr3(p.pointPos), pointColor: arr3(p.pointColor), pointInt: Math.max(0, num(p.pointInt, 8)), glitch: num(p.glitch, 0), cyanotype: num(p.cyanotype, 0), selenium: num(p.selenium, 0), moonlight: num(p.moonlight, 0), verdigris: num(p.verdigris, 0), rosegold: num(p.rosegold, 0), aurora: num(p.aurora, 0), amber: num(p.amber, 0), chromaOn: bool(p.chromaOn), chromaStr: Math.max(0, Math.min(2, num(p.chromaStr, 0.5))), watercolor: Math.max(0, Math.min(1, num(p.watercolor, 0))), pixelSize: Math.max(0, Math.min(1, num(p.pixelSize, 0))), hueShift: Math.max(-180, Math.min(180, num(p.hueShift, 0))), duotoneShadow: fin3(p.duotoneShadow, [0.05,0.0,0.1]), duotoneHigh: fin3(p.duotoneHigh, [1.0,0.9,0.7]), chromaAmt: Math.max(0, Math.min(1, num(p.chromaAmt, 0.5))), bloomThreshold: num(p.bloomThreshold, 0), glowThreshold: num(p.glowThreshold, 0), grainAmount: num(p.grainAmount, 1), scanlines: num(p.scanlines, 0), colorGrade: num(p.colorGrade, 0), saturation: num(p.saturation, 1), gradeContrast: num(p.gradeContrast, 1), edgeDetect: num(p.edgeDetect, 0), posterizeNew: num(p.posterizeNew, 0), sepiaNew: num(p.sepiaNew, 0), fisheyeNew: num(p.fisheyeNew, 0), crossHatch: num(p.crossHatch, 0)
   };
@@ -2068,7 +2093,7 @@ function applyPreset(idx){
   maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
   sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
   maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
-  denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; sunNeeOn=s.sunNeeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
+  denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; sunNeeOn=s.sunNeeOn; sunSoftOn=s.sunSoftOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
 vignetteOn=s.vignetteOn; vigStr=s.vigStr; gamma=s.gamma; clampRad=s.clampRad; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline; invert=s.invert; border=s.border; bright=s.bright; duotone=s.duotone; vibrance=s.vibrance; mono=s.mono; tint=s.tint; balance=s.balance; bleach=s.bleach; fade=s.fade; splittone=s.splittone; highlights=s.highlights; glow=s.glow; solarize=s.solarize; expose=s.expose; threshold=s.threshold; crossprocess=s.crossprocess; falsecolor=s.falsecolor; gradientmap=s.gradientmap; pastel=s.pastel; infrared=s.infrared; radial=s.radial; selColor=s.selColor; selHue=s.selHue; selRange=s.selRange; swirl=s.swirl; night=s.night; emboss=s.emboss; edge=s.edge; pixelate=s.pixelate; pointillize=s.pointillize; pointSize=s.pointSize; rgbshift=s.rgbshift; halftone=s.halftone; techni=s.techni; vhs=s.vhs; colorkey=s.colorkey; anaglyph=s.anaglyph; oil=s.oil; lomo=s.lomo; leak=s.leak; wave=s.wave; cnoise=s.cnoise; kaleido=s.kaleido; ripple=s.ripple; huequant=s.huequant; lift=s.lift; hsat=s.hsat; fisheye=s.fisheye; pointOn=s.pointOn; pointPos=s.pointPos; pointColor=s.pointColor; pointInt=s.pointInt; glitch=s.glitch; cyanotype=s.cyanotype; selenium=s.selenium; moonlight=s.moonlight; verdigris=s.verdigris; rosegold=s.rosegold; aurora=s.aurora; amber=s.amber; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; watercolor=s.watercolor; pixelSize=s.pixelSize; hueShift=s.hueShift; duotoneShadow=s.duotoneShadow.slice(); duotoneHigh=s.duotoneHigh.slice(); chromaAmt=s.chromaAmt; bloomThreshold=s.bloomThreshold; glowThreshold=s.glowThreshold; grainAmount=s.grainAmount; scanlines=s.scanlines; colorGrade=s.colorGrade; saturation=s.saturation; gradeContrast=s.gradeContrast; edgeDetect=s.edgeDetect; posterizeNew=s.posterizeNew; sepiaNew=s.sepiaNew; fisheyeNew=s.fisheyeNew; lens=s.lens; lensAmt=s.lensAmt; crossHatch=s.crossHatch;
   syncSceneUI(); clearAccum();
 }
@@ -2126,6 +2151,7 @@ function syncSceneUI(){
   if($('denoise')) $('denoise').checked = denoiseOn;
   if($('nee')) $('nee').checked = neeOn;
   if($('sunNee')) $('sunNee').checked = sunNeeOn;
+  if($('sunSoft')) $('sunSoft').checked = sunSoftOn;
   if($('bloom')) $('bloom').checked = bloomOn;
   if($('denIters')) $('denIters').value = denIters;
   if($('bloomStr')) $('bloomStr').value = Math.round(bloomStr * 100);
@@ -2236,7 +2262,7 @@ function syncSceneUI(){
 }
 $('exportScene').onclick = ()=>{
   const s = serializeScene({ sceneId, theta, phi, radius, target, maxBounces, resScale, exposure,
-    focusDist, aperture, maxSamples, sunAz, sunEl, sunInt, rough, jitter, fogColor, fov, bgTop, bgBottom, debugMode, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, sunNeeOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, chromaOn, chromaStr, grainOn, grainStr, gamma, clampRad, satStr, contrast, sharpen, dither, temp, hue, sepia, posterize, letterbox, scanline, invert, border, bright, duotone, vibrance, mono, tint, balance, bleach, fade, splittone, highlights, glow, solarize, expose, threshold, crossprocess, falsecolor, gradientmap, pastel, infrared, radial, selColor, selHue, selRange, swirl, night, emboss, edge, pixelate, pointillize, pointSize, rgbshift, halftone, techni, vhs, colorkey, anaglyph, oil, lomo, leak, wave, cnoise, kaleido, ripple, huequant, lift, hsat, pointOn, pointPos, pointColor, pointInt, glitch, cyanotype, selenium, moonlight, verdigris, rosegold, aurora, amber, fisheye, watercolor, pixelSize, hueShift, duotoneShadow, duotoneHigh, chromaAmt, bloomThreshold, glowThreshold, grainAmount, scanlines, colorGrade, saturation, gradeContrast, edgeDetect, posterizeNew, sepiaNew, fisheyeNew, crossHatch });
+    focusDist, aperture, maxSamples, sunAz, sunEl, sunInt, rough, jitter, fogColor, fov, bgTop, bgBottom, debugMode, toneMode, autoExp, fogDensity, rrOn, denoiseOn, denIters, neeOn, sunNeeOn, sunSoftOn, envInt, bloomOn, bloomStr, bloomThr, vignetteOn, vigStr, chromaOn, chromaStr, grainOn, grainStr, gamma, clampRad, satStr, contrast, sharpen, dither, temp, hue, sepia, posterize, letterbox, scanline, invert, border, bright, duotone, vibrance, mono, tint, balance, bleach, fade, splittone, highlights, glow, solarize, expose, threshold, crossprocess, falsecolor, gradientmap, pastel, infrared, radial, selColor, selHue, selRange, swirl, night, emboss, edge, pixelate, pointillize, pointSize, rgbshift, halftone, techni, vhs, colorkey, anaglyph, oil, lomo, leak, wave, cnoise, kaleido, ripple, huequant, lift, hsat, pointOn, pointPos, pointColor, pointInt, glitch, cyanotype, selenium, moonlight, verdigris, rosegold, aurora, amber, fisheye, watercolor, pixelSize, hueShift, duotoneShadow, duotoneHigh, chromaAmt, bloomThreshold, glowThreshold, grainAmount, scanlines, colorGrade, saturation, gradeContrast, edgeDetect, posterizeNew, sepiaNew, fisheyeNew, crossHatch });
   downloadBlob('lumen_scene.json', new Blob([JSON.stringify(s, null, 2)], { type: 'application/json' }));
 };
 $('importScene').onclick = ()=> $('sceneFile').click();
@@ -2250,7 +2276,7 @@ $('sceneFile').onchange = e=>{
       maxBounces=s.maxBounces; resScale=s.resScale; exposure=s.exposure; focusDist=s.focusDist; aperture=s.aperture;
       sunAz=s.sunAz; sunEl=s.sunEl; sunInt=s.sunInt; rough=s.rough; jitter=s.jitter; fogColor=s.fogColor ? s.fogColor.slice() : [0.8,0.85,0.9]; fov=s.fov; bgTop=s.bgTop ? s.bgTop.slice() : [0.20,0.36,0.66]; bgBottom=s.bgBottom ? s.bgBottom.slice() : [0.62,0.70,0.80]; debugMode=s.debugMode;
       maxSamples=s.maxSamples; toneMode=s.toneMode; autoExp=s.autoExp; fogDensity=s.fogDensity; rrOn=s.rrOn;
-      denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; sunNeeOn=s.sunNeeOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
+      denoiseOn=s.denoiseOn; denIters=s.denIters; neeOn=s.neeOn; sunNeeOn=s.sunNeeOn; sunSoftOn=s.sunSoftOn; envInt=s.envInt; bloomOn=s.bloomOn; bloomStr=s.bloomStr; bloomThr=s.bloomThr;
 vignetteOn=s.vignetteOn; vigStr=s.vigStr; chromaOn=s.chromaOn; chromaStr=s.chromaStr; grainOn=s.grainOn; grainStr=s.grainStr; gamma=s.gamma; satStr=s.satStr; contrast=s.contrast; sharpen=s.sharpen; dither=s.dither; temp=s.temp; hue=s.hue; sepia=s.sepia; posterize=s.posterize; letterbox=s.letterbox; scanline=s.scanline; invert=s.invert; border=s.border; bright=s.bright; duotone=s.duotone; vibrance=s.vibrance; mono=s.mono; tint=s.tint; balance=s.balance; bleach=s.bleach; fade=s.fade; splittone=s.splittone; highlights=s.highlights; glow=s.glow; solarize=s.solarize; expose=s.expose; threshold=s.threshold; crossprocess=s.crossprocess; falsecolor=s.falsecolor; gradientmap=s.gradientmap; pastel=s.pastel; infrared=s.infrared; radial=s.radial; selColor=s.selColor; selHue=s.selHue; selRange=s.selRange; swirl=s.swirl; night=s.night; emboss=s.emboss; edge=s.edge; pixelate=s.pixelate; pointillize=s.pointillize; pointSize=s.pointSize; rgbshift=s.rgbshift; halftone=s.halftone; techni=s.techni; vhs=s.vhs; colorkey=s.colorkey; anaglyph=s.anaglyph; oil=s.oil; lomo=s.lomo; leak=s.leak; wave=s.wave; cnoise=s.cnoise; kaleido=s.kaleido; ripple=s.ripple; huequant=s.huequant; lift=s.lift; hsat=s.hsat; fisheye=s.fisheye; pointOn=s.pointOn; pointPos=s.pointPos; pointColor=s.pointColor; pointInt=s.pointInt; glitch=s.glitch; cyanotype=s.cyanotype; selenium=s.selenium; moonlight=s.moonlight; verdigris=s.verdigris; rosegold=s.rosegold; aurora=s.aurora; amber=s.amber; chromaOn=s.chromaOn; chromaStr=s.chromaStr; watercolor=s.watercolor; pixelSize=s.pixelSize; hueShift=s.hueShift; duotoneShadow=s.duotoneShadow.slice(); duotoneHigh=s.duotoneHigh.slice(); chromaAmt=s.chromaAmt; bloomThreshold=s.bloomThreshold; glowThreshold=s.glowThreshold; grainAmount=s.grainAmount; scanlines=s.scanlines; colorGrade=s.colorGrade; saturation=s.saturation; gradeContrast=s.gradeContrast; edgeDetect=s.edgeDetect; posterizeNew=s.posterizeNew; sepiaNew=s.sepiaNew; fisheyeNew=s.fisheyeNew; lens=s.lens; lensAmt=s.lensAmt; clampRad=s.clampRad; crossHatch=s.crossHatch;
       syncSceneUI(); clearAccum();
     }catch(err){ /* 解析失败静默忽略 */ }
@@ -2274,6 +2300,7 @@ $('rr').onchange = e=>{ rrOn = e.target.checked; clearAccum(); };
 $('denoise').onchange = e=>{ denoiseOn = e.target.checked; };
 $('nee').onchange = e=>{ neeOn = e.target.checked; clearAccum(); };
 $('sunNee').onchange = e=>{ sunNeeOn = e.target.checked; clearAccum(); };   // 太阳直射+焦散开关
+$('sunSoft').onchange = e=>{ sunSoftOn = e.target.checked; clearAccum(); };   // 太阳软阴影开关（性能换画质）
 $('denIters').oninput = e=>{ let dv=+e.target.value; if(!isFinite(dv)) dv=3; dv=Math.max(1,Math.min(5,dv)); denIters=Math.round(dv); $('denItersVal').textContent=denIters; };
 $('bloom').onchange = e=>{ bloomOn = e.target.checked; };   // 后处理, 无需清累积
 $('bloomStr').oninput = e=>{ bloomStr=+e.target.value/100; $('bloomStrVal').textContent=bloomStr.toFixed(2); };
@@ -2506,6 +2533,7 @@ function loop(){
   gl.uniform1f(u(ptProg,'uRR'), rrOn ? 1.0 : 0.0);
   gl.uniform1f(u(ptProg,'uNEE'), neeOn ? 1.0 : 0.0);
   gl.uniform1f(u(ptProg,'uSunNee'), sunNeeOn ? 1.0 : 0.0);
+  gl.uniform1f(u(ptProg,'uSunSoft'), sunSoftOn ? 1.0 : 0.0);
   gl.uniform1f(u(ptProg,'uTime'), now/1000);
   gl.bindVertexArray(quad);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
