@@ -38,7 +38,7 @@ ok('fogPhase 确定性', fogPhase(0.7, 8) === fogPhase(0.7, 8));
 
 // ---- 2) GLSL 雾分支受光结构守护 ----
 ok('GLSL: uFogGlow uniform 声明', src.includes('uniform float uFogGlow;'));
-ok('GLSL: 环境底色照明（bgTop/bgBottom 混合，不含太阳盘防过曝）', src.includes('vec3 amb = mix(uBgBottom, uBgTop, clamp(rd.y*0.5+0.5, 0.0, 1.0)) * uEnv;'));
+ok('GLSL: 环境照明走 envAmbient（HDRI 钳制 / 程序化渐变双分支）', src.includes('vec3 amb = envAmbient(rd);'));
 ok('GLSL: 相位函数同式（1+glow·pow^6）', src.includes('float phase = 1.0 + uFogGlow * pow(max(dot(rd, uSunDir), 0.0), 6.0);'));
 ok('GLSL: 段中点太阳阴影射线（截断防 1e9 长段）', src.includes('vec3 mid = ro + rd * (min(seg, 40.0) * 0.5);') && src.includes('Hit sh = scene(mid, uSunDir);'));
 ok('GLSL: 太阳直射 Le·Ω 近似（受 sunInt/sunNee 门控）', src.includes('sunLe = vec3(22.0,18.0,13.0) * uSunInt * uEnv * 0.00283;') && src.includes('if(uSunInt > 0.0 && uSunNee > 0.5){'));

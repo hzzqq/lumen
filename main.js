@@ -408,6 +408,13 @@ vec3 sky(vec3 d){
   return col * uEnv;
 }
 
+// 雾点环境照明（JS envAmbientJ 镜像）：HDRI 用贴图采样（min 钳制 12.0 防太阳盘过曝——
+// 贴图天空典型辐射 <12、太阳盘 >100）；程序化用渐变底色（不含太阳盘）。两分支共用 uEnv 系强度链。
+vec3 envAmbient(vec3 d){
+  if(uEnvHdrOn > 0.5) return min(envSample(d), vec3(12.0));
+  return mix(uBgBottom, uBgTop, clamp(d.y*0.5+0.5, 0.0, 1.0)) * uEnv;
+}
+
 // 3D 值噪声 + FBM（用于星云体积纹理）
 float hash31(vec3 p){
   p = fract(p*0.3183099 + 0.1);
@@ -570,7 +577,7 @@ vec3 radiance(vec3 ro, vec3 rd){
     float seg = h.hit ? h.t : 1e9;
     if(uFog > 0.0001){
       float fogA = 1.0 - exp(-uFog * seg);
-      vec3 amb = mix(uBgBottom, uBgTop, clamp(rd.y*0.5+0.5, 0.0, 1.0)) * uEnv;   // 环境照明近似（渐变底色，不含太阳盘防过曝）
+      vec3 amb = envAmbient(rd);   // 环境照明（HDRI 贴图采样钳制 / 程序化渐变，见 envAmbient）
       float phase = 1.0 + uFogGlow * pow(max(dot(rd, uSunDir), 0.0), 6.0);       // 前向散射峰（JS fogPhase 镜像）
       vec3 sunLe = vec3(0.0);
       if(uSunInt > 0.0 && uSunNee > 0.5){
@@ -2052,6 +2059,13 @@ function causticGain(p, P2, de, R, ior){
 // 雾散射相位函数：前向散射峰（视线与太阳夹角越小雾越亮，GLSL 雾分支同式），glow=0 退化为各向同性
 function fogPhase(cosRD, glow){
   return 1 + glow * Math.pow(Math.max(0, cosRD), 6);
+}
+// 雾点环境照明分支的 JS 镜像（GLSL envAmbient 同参同式）：
+// HDRI 模式贴图采样逐通道 min 钳制 12.0（防太阳盘过曝）；程序化模式渐变底色插值 × envInt
+function envAmbientJ(hdrOn, hdrSample, bgTop, bgBottom, dirY, envInt){
+  if(hdrOn) return [hdrSample[0], hdrSample[1], hdrSample[2]].map(v => Math.min(v, 12.0));
+  const t = Math.max(0, Math.min(1, dirY * 0.5 + 0.5));
+  return [0, 1, 2].map(i => (bgBottom[i] + (bgTop[i] - bgBottom[i]) * t) * envInt);
 }
 // ---------- 场景预设画廊：命名化的「几何 + 相机 + 渲染参数」全套配置 ----------
 const PRESETS = [
